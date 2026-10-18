@@ -1,0 +1,28 @@
+# !! 本文件由 scripts/clangd/switch.py 自动生成 (preset=windows)，不要手改。
+#   要改内容请改 scripts/clangd/templates/python_numpy_cuda.clangd，然后重跑：
+#       python scripts/clangd/switch.py --preset windows
+#
+# flavor: python + numpy + CUDA（不含 torch）—— 3dgs/gsplatrender 用
+CompileFlags:
+  Add:
+    - -std=c++17
+    - -ID:/conda/envs/ai/Include
+    - -ID:/conda/envs/ai/Lib/site-packages/numpy/_core/include
+    - -ID:/Program Files/NVIDIA/CUDA/v13.2/include
+---
+If:
+  PathMatch: .*\.(cu|cuh)
+CompileFlags:
+  Add:
+    - -xcuda
+    - --cuda-path=D:/Program Files/NVIDIA/CUDA/v13.2
+    # IntelliSense only: clangd 靠它解析 arch 相关的 builtin。
+    # 真正编译时的 arch 由 nvcc / CUDAFLAGS 决定，跟这里无关。
+    - --cuda-gpu-arch=sm_89
+Diagnostics:
+  Suppress:
+    - member_function_call_bad_type
+    - typename_nested_not_found
+    - err_typename_nested_not_found
+    - ovl_no_viable_member_function_in_call
+    - err_ovl_no_viable_member_function_in_call

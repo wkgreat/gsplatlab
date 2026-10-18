@@ -1,0 +1,28 @@
+{
+  "files.associations": {
+    "*.hpp": "cpp",
+    "*.hh": "cpp",
+    "*.hxx": "cpp",
+    "*.h": "cpp",
+    "*.cpp": "cpp",
+    "*.cu": "cuda-cpp",
+    "*.cuh": "cuda-cpp"
+  },
+  "editor.formatOnSave": true,
+  "[c]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  },
+  "[cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  },
+  "[cuda-cpp]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  },
+  "C_Cpp.formatting": "clangFormat",
+  "clangd.arguments": [
+    "--fallback-style=file",
+    "--background-index"
+  ],
+  "python-envs.defaultEnvManager": "ms-python.python:conda",
+  "python-envs.defaultPackageManager": "ms-python.python:conda"
+}
