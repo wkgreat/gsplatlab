@@ -2,9 +2,12 @@
 #include "gsplat_rasterizer.hpp"
 #include "matrix_gpu.hpp"
 #include <cfloat>
+#include <cuda_device_runtime_api.h>
 #include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <vector_types.h>
 
 using namespace gsplat::matrix::gpu;
 
@@ -539,18 +542,11 @@ void gsplat_splat_sort(SplatData2DGPU splats2d, SplatTileInfo d_tileinfo) {
 
   SplatTileInfo h_tileinfo = splat_tileinfo_to_host(d_tileinfo);
 
-  // d_cache 需要能容纳最大 tile 的 bitonic 填充长度 m（2 的幂），
-  // 而不是 nEntries。否则 fill/sort 会越界写坏相邻显存。
-  size_t max_m = 1;
-  for (int tileId = 0; tileId < h_tileinfo.nums.x * h_tileinfo.nums.y;
-       ++tileId) {
-    size_t m = bitCeil(h_tileinfo.index.stride[tileId]);
-    if (m > max_m) {
-      max_m = m;
-    }
-  }
+  size_t maxTileSplatCount = getTileMaxNumSplats(h_tileinfo);
+  size_t m = bitCeil(maxTileSplatCount);
+
   int *d_cache;
-  cudaMalloc(&d_cache, max_m * sizeof(int));
+  cudaMalloc(&d_cache, m * sizeof(int));
 
   for (int tileId = 0; tileId < h_tileinfo.nums.x * h_tileinfo.nums.y;
        ++tileId) {
@@ -585,9 +581,6 @@ __global__ void gsplat_rasterize_kernel(SplatSceneGPU scene,
   }
 }
 
-/*
-imagemask: [tileSizeX * tileSizeY], is pixel painted
-*/
 __global__ void gsplat_tile_paint_kernel(SplatSceneGPU scene,
                                          SplatData2DGPU splats2d,
                                          SplatTileInfo tileinfo, bool *imgmask,
@@ -645,26 +638,58 @@ __global__ void gsplat_tile_paint_kernel(SplatSceneGPU scene,
       }
     }
   }
+}
 
-  // transmission to opacity
-  for (int px = tilebox.x.min; px <= tilebox.x.max; ++px) {
-    for (int py = tilebox.y.min; py <= tilebox.y.max; ++py) {
-      if (imgmask[py * scene.width + px]) {
-        vec4f rgba = image[py * scene.width + px];
-        rgba.x = rgba.x + rgba.w * scene.bgcolor.x;
-        rgba.y = rgba.y + rgba.w * scene.bgcolor.y;
-        rgba.z = rgba.z + rgba.w * scene.bgcolor.z;
-        rgba.w = 1; // opacity
-        image[py * scene.width + px] = rgba;
-      }
+__global__ void gsplat_image_opacity_kernel(vec4f *d_image, bool *d_imgmask,
+                                            SplatSceneGPU d_scene) {
+
+  unsigned int x = blockDim.x * blockIdx.x + threadIdx.x;
+  unsigned int y = blockDim.y * blockIdx.y + threadIdx.y;
+  if (x < d_scene.width && y < d_scene.height) {
+    unsigned int idx = y * d_scene.width + x;
+    if (d_imgmask[idx]) {
+      vec4f rgba = d_image[idx];
+      rgba.x = rgba.x + rgba.w * d_scene.bgcolor.x;
+      rgba.y = rgba.y + rgba.w * d_scene.bgcolor.y;
+      rgba.z = rgba.z + rgba.w * d_scene.bgcolor.z;
+      rgba.w = 1.0 - rgba.w; // opacity
+      d_image[idx] = rgba;
     }
   }
 }
 
-void gsplat_tile_paint2(SplatSceneGPU scene, SplatData2DGPU splats2d,
-                        SplatTileInfo tileinfo, vec4f *image) {
+void gsplat_tile_paint(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d,
+                       SplatTileInfo d_tileinfo, vec4f *d_image) {
+  dim3 blockDim(16, 16);
+  dim3 gridDim((blockDim.x + d_tileinfo.nums.x - 1) / blockDim.x,
+               (blockDim.y + d_tileinfo.nums.y - 1) / blockDim.y, 1);
+  bool *d_imgmask;
+  cudaMalloc(&d_imgmask, d_scene.width * d_scene.height * sizeof(bool));
+  cudaMemset(d_imgmask, 0, d_scene.width * d_scene.height * sizeof(bool));
+  gsplat_tile_paint_kernel<<<gridDim, blockDim>>>(
+      d_scene, d_splats2d, d_tileinfo, d_imgmask, d_image);
 
-  // for each tile
+  dim3 gridDim2((blockDim.x + d_scene.width - 1) / blockDim.x,
+                (blockDim.y + d_scene.height - 1) / blockDim.y, 1);
+  gsplat_image_opacity_kernel<<<gridDim2, blockDim>>>(d_image, d_imgmask,
+                                                      d_scene);
+
+  cudaFree(d_imgmask);
+}
+
+void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d,
+                        SplatTileInfo d_tileinfo, vec4f *d_image) {
+  SplatTileInfo h_tileInfo = splat_tileinfo_to_host(d_tileinfo);
+  int tnpx = h_tileInfo.size.x * h_tileInfo.size.y;
+  int tmns = getTileMaxNumSplats(h_tileInfo);
+  float *d_cacheAlpha;
+  float *d_cacheTrans;
+  float4 *d_cacheColor;
+  cudaMalloc(&d_cacheAlpha, sizeof(float) * tnpx * tmns);
+  cudaMalloc(&d_cacheTrans, sizeof(float) * tnpx * tmns);
+  cudaMalloc(&d_cacheColor, sizeof(float4) * tnpx * tmns);
+
+  // TODO
 }
 
 SplatDataGPU gsplat_data_gpu_create(SplatData &splats_cpu) {
@@ -757,17 +782,13 @@ void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats,
   vec4f *image_gpu;
   cudaMalloc(&image_gpu, imageByteSize);
 
+  debug_print("scene bgcolor=(%f,%f,%f,%f)\n", scene_gpu.bgcolor.x,
+              scene_gpu.bgcolor.y, scene_gpu.bgcolor.z, scene_gpu.bgcolor.w);
+
   image_set_color_gpu(image_gpu, scene_gpu);
   cuda::CUDA_CHECK_LAST_ERROR(debug_print);
 
-  dim3 blockDim(16, 16);
-  dim3 gridDim((blockDim.x + tileinfo_gpu.nums.x - 1) / blockDim.x,
-               (blockDim.y + tileinfo_gpu.nums.y - 1) / blockDim.y);
-  bool *imgmask_gpu;
-  cudaMalloc(&imgmask_gpu, scene.width * scene.height * sizeof(bool));
-  cudaMemset(imgmask_gpu, 0, scene.width * scene.height * sizeof(bool));
-  gsplat_tile_paint_kernel<<<gridDim, blockDim>>>(
-      scene_gpu, splats2d_gpu, tileinfo_gpu, imgmask_gpu, image_gpu);
+  gsplat_tile_paint(scene_gpu, splats2d_gpu, tileinfo_gpu, image_gpu);
 
   cuda::CUDA_CHECK_LAST_ERROR(debug_print);
 

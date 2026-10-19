@@ -16,6 +16,10 @@ CompileFlags:
   Add:
     - -xcuda
     - --cuda-path=D:/Program Files/NVIDIA/CUDA/v13.2
+    # CUDA 13 起 CUB/Thrust/libcudacxx 被挪到 include/cccl/ 下，
+    # nvcc 会自动加这个目录，但 clangd(clang) 不会，故手动补上，
+    # 否则 <cub/cub.cuh> 这类头文件解析不到。
+    - -ID:/Program Files/NVIDIA/CUDA/v13.2/include/cccl
     # IntelliSense only: clangd 靠它解析 arch 相关的 builtin。
     # 真正编译时的 arch 由 nvcc / CUDAFLAGS 决定，跟这里无关。
     - --cuda-gpu-arch=sm_89

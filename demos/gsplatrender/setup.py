@@ -11,7 +11,9 @@ if cuda_home is None:
 
 cuda_include_dir = os.path.join(cuda_home, "include")
 cuda_library_dir = (
-    os.path.join(cuda_home, "lib", "x64") if os.name == "nt" else os.path.join(cuda_home, "lib64")
+    os.path.join(cuda_home, "lib", "x64")
+    if os.name == "nt"
+    else os.path.join(cuda_home, "lib64")
 )
 nvcc = os.path.join(cuda_home, "bin", "nvcc.exe" if os.name == "nt" else "nvcc")
 
@@ -76,6 +78,7 @@ setup(
         CUDAExtension(
             name="gsplatrender._C",
             sources=[
+                "csrc/gsplat_tile_index.cu",
                 "csrc/gsplat_rasterizer.cu",
                 "csrc/cuda_utils.cu",
                 "csrc/gsplatrender_binding.cpp",

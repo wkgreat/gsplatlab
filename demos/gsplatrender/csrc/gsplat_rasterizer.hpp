@@ -69,6 +69,8 @@ struct SplatTileInfo {
   } index;
 };
 
+size_t getTileMaxNumSplats(SplatTileInfo h_tileInfo);
+
 template <typename T> struct Range {
   T min, max;
 };
