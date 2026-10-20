@@ -663,20 +663,35 @@ __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene,
                                            vec2i tileIdx, int tmns,
                                            float *d_cacheAlpha) {
 
-  int pidx = blockDim.x * blockIdx.x + threadIdx.x;    // x of pixel on tile
-  int pidy = blockDim.y * blockIdx.y + threadIdx.y;    // y of pixel on tile
-  int spid = blockDim.z * blockDim.z + threadIdx.z;    // spid-th splat on tile
+  int pidx = blockDim.x * blockIdx.x + threadIdx.x; // x of pixel on tile
+  int pidy = blockDim.y * blockIdx.y + threadIdx.y; // y of pixel on tile
+  int enid = blockDim.z * blockDim.z +
+             threadIdx.z; // index entry id on tile (enid-th splat on tile)
   int tid = tileIdx.y * d_tileinfo.size.x + tileIdx.x; // tile 1d idx
   int toff = d_tileinfo.index.offset[tid];
   int tstr = d_tileinfo.index.stride[tid];
 
+  int cacheIdx = enid * d_tileinfo.size.x * d_tileinfo.size.y +
+                 pidy * d_tileinfo.size.x + pidx;
+
   if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y) {
     vec2f p =
         gsplatTilePixelScreenCoords(d_tileinfo, tileIdx, vec2i(pidx, pidy));
-
-    // TODO
-    if (spid < tstr) {
+    if (enid < tstr) {
+      int spid =
+          d_tileinfo.index.entries[toff + enid]; // splat id in d_splats2d
+      vec2f mu = d_splats2d.pos2d[spid];
+      mat2x2f cov2d = d_splats2d.cov2d[spid];
+      vec2f dist = p - mu;
+      float w = compute_weight(dist, cov2d);
+      if (w >= 0.001) {
+        float a = d_splats2d.color[spid].w;
+        d_cacheAlpha[cacheIdx] = a * w;
+      } else {
+        d_cacheAlpha[cacheIdx] = 0.0f;
+      }
     } else {
+      d_cacheAlpha[cacheIdx] = 0.0f;
     }
   }
 }
