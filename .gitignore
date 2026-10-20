@@ -5,3 +5,7 @@ __pycache__
 profile
 .pixi
 *.so
+
+# 由 scripts/clangd/gen_clangd.py 按机器生成（含本机路径），不入库
+demos/gsplatrender/.clangd
+.vscode/settings.json

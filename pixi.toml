@@ -2,7 +2,8 @@
 authors = ["wk"]
 channels = ["conda-forge"]
 name = "gsplatlab"
-platforms = ["linux-64"]
+# 同时支持 Windows / Linux。
+platforms = ["linux-64", "win-64"]
 
 [dependencies]
 # 系统 clangd 18 不支持 CUDA 13.2（找不到 libdevice、CUDA 13 的 wrapper 头也变了），
@@ -13,3 +14,20 @@ platforms = ["linux-64"]
 clang-tools = "23.*"
 clang = "23.*"
 clangxx = "23.*"
+
+# python + numpy 只服务于 clangd：让 demos/gsplatrender/.clangd 里 Python.h /
+# numpy 头文件路径全部落在 .pixi/envs/default 内，不再依赖某台机器上的 conda 路径。
+python = "3.13.*"
+numpy = "*"
+
+[tasks]
+# 按当前机器 + 当前 pixi 环境重新生成 demos/gsplatrender/.clangd 和
+# .vscode/settings.json（幂等，无变化则不写）。pixi 激活时会自动调用。
+clangd-config = { cmd = "python scripts/clangd/gen_clangd.py", description = "生成 .clangd / .vscode/settings.json" }
+
+# 激活时自动刷新 clangd 配置；Windows / Linux 各用一份脚本。
+[target.win-64.activation]
+scripts = ["scripts/clangd/activate.bat"]
+
+[target.linux-64.activation]
+scripts = ["scripts/clangd/activate.sh"]

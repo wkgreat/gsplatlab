@@ -19,7 +19,7 @@
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
   },
   "C_Cpp.formatting": "clangFormat",
-  "clangd.path": ".pixi/envs/default/bin/clangd",
+  "clangd.path": "{{CLANGD_PATH}}",
   "clangd.arguments": [
     "--fallback-style=file",
     "--background-index"

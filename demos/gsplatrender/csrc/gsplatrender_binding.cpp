@@ -97,9 +97,9 @@ static PyObject *gsplat_rasterize(PyObject *self, PyObject *args) {
   Py_XDECREF(eye_obj);
 
   PyObject *near_obj = PyObject_GetAttrString(scene, "near");
-  float near = PyFloat_AsDouble(near_obj);
+  float znear = PyFloat_AsDouble(near_obj);
   PyObject *far_obj = PyObject_GetAttrString(scene, "far");
-  float far = PyFloat_AsDouble(far_obj);
+  float zfar = PyFloat_AsDouble(far_obj);
   PyObject *fovy_obj = PyObject_GetAttrString(scene, "fovy");
   float fovy = PyFloat_AsDouble(fovy_obj);
   PyObject *width_obj = PyObject_GetAttrString(scene, "width");
@@ -113,7 +113,7 @@ static PyObject *gsplat_rasterize(PyObject *self, PyObject *args) {
   PySys_WriteStdout("Scene, viewmtx ndim=%d shape=(%d, %d)\n", viewmtx_ndim,
                     viewmtx_shape[0], viewmtx_shape[1]);
   PySys_WriteStdout("Scene, near=%f, far=%f, fovy=%f, width=%d, height=%d\n",
-                    near, far, fovy, width, height);
+                    znear, zfar, fovy, width, height);
 
   PyArrayObject *pos3d_arr = reinterpret_cast<PyArrayObject *>(
       PyArray_FROM_OTF(pos3d_obj, NPY_FLOAT32, NPY_ARRAY_IN_ARRAY));
@@ -173,8 +173,8 @@ static PyObject *gsplat_rasterize(PyObject *self, PyObject *args) {
   splatScene.projmtx = static_cast<float *>(PyArray_DATA(projmtx_arr));
   splatScene.bgcolor = static_cast<float *>(PyArray_DATA(bgcolor_arr));
   splatScene.eye = eye;
-  splatScene.near = near;
-  splatScene.far = far;
+  splatScene.znear = znear;
+  splatScene.zfar = zfar;
   splatScene.fovy = fovy;
   splatScene.width = width;
   splatScene.height = height;
@@ -272,8 +272,8 @@ static PyObject *gsplat_compute_debug(PyObject *self, PyObject *args) {
   Py_XDECREF(eye_z_obj);
   Py_XDECREF(eye_obj);
 
-  float near = PyFloat_AsDouble(PyObject_GetAttrString(scene, "near"));
-  float far = PyFloat_AsDouble(PyObject_GetAttrString(scene, "far"));
+  float znear = PyFloat_AsDouble(PyObject_GetAttrString(scene, "near"));
+  float zfar = PyFloat_AsDouble(PyObject_GetAttrString(scene, "far"));
   float fovy = PyFloat_AsDouble(PyObject_GetAttrString(scene, "fovy"));
   int width = PyLong_AsLong(PyObject_GetAttrString(scene, "width"));
   int height = PyLong_AsLong(PyObject_GetAttrString(scene, "height"));
@@ -297,8 +297,8 @@ static PyObject *gsplat_compute_debug(PyObject *self, PyObject *args) {
   splatScene.projmtx = static_cast<float *>(PyArray_DATA(projmtx_arr));
   splatScene.bgcolor = static_cast<float *>(PyArray_DATA(bgcolor_arr));
   splatScene.eye = eye;
-  splatScene.near = near;
-  splatScene.far = far;
+  splatScene.znear = znear;
+  splatScene.zfar = zfar;
   splatScene.fovy = fovy;
   splatScene.width = width;
   splatScene.height = height;

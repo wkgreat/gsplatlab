@@ -1,0 +1,30 @@
+# 本文件由 scripts/clangd/gen_clangd.py 自动生成（pixi 激活时刷新），请勿手改。
+# python/numpy 头文件来自当前 pixi 环境，CUDA 来自 CUDA_HOME/CUDA_PATH。
+CompileFlags:
+  Add:
+    # Windows SDK 的 minwindef.h 会把 min/max 定义成宏，撞坏 CUB 的
+    # numeric_limits<...>::max()；NOMINMAX 关掉它。Linux 上是空操作。
+    - "-DNOMINMAX"
+{{HEADER_FLAGS}}
+---
+If:
+  PathMatch: .*\.(cu|cuh)
+CompileFlags:
+  Add:
+    - "-xcuda"
+    - "--cuda-path={{CUDA_ROOT}}"
+    # 仅 IntelliSense 用；实际编译的 arch 由 nvcc/CUDAFLAGS 决定
+    - "--cuda-gpu-arch={{CUDA_ARCH}}"
+Diagnostics:
+  Suppress:
+    - member_function_call_bad_type
+    - typename_nested_not_found
+    - err_typename_nested_not_found
+    - ovl_no_viable_member_function_in_call
+    - err_ovl_no_viable_member_function_in_call
+    # Windows 下 CUDA 设备头里的 __assert_fail 会让 clang 23 报这个
+    - ovl_no_viable_function_in_call
+    - err_ovl_no_viable_function_in_call
+    # CUDA 13.2 的 CUB/Thrust 头里有一个 clang 23 不接受的
+    # __host__ deduction guide 注解，属于三方头噪音。
+    - deduction_guide_target_attr

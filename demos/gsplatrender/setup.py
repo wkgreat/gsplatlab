@@ -59,8 +59,13 @@ class BuildExtension(build_ext):
                 "-o",
                 obj,
                 "-O2",
+                "-std=c++17",
                 "--compiler-options",
-                "/MD,/utf-8" if os.name == "nt" else "-fPIC",
+                (
+                    "/MD,/utf-8,/Zc:preprocessor"
+                    if os.name == "nt"
+                    else "-fPIC"
+                ),
             ]
             cmd.extend(f"-I{include_dir}" for include_dir in ext.include_dirs)
             subprocess.check_call(cmd)
@@ -86,7 +91,11 @@ setup(
             include_dirs=[np.get_include(), "csrc", cuda_include_dir],
             library_dirs=[cuda_library_dir],
             libraries=["cudart"],
-            extra_compile_args=["/O2", "/utf-8"] if os.name == "nt" else ["-O2"],
+            extra_compile_args=(
+                ["/O2", "/utf-8", "/Zc:preprocessor", "/std:c++17"]
+                if os.name == "nt"
+                else ["-O2", "-std=c++17"]
+            ),
         ),
     ],
     cmdclass={"build_ext": BuildExtension},

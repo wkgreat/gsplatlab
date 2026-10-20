@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gsplat.hpp"
+#include "matrix_gpu.hpp"
 #include <cuda_runtime.h>
 #include <driver_types.h>
 #include <memory.h>
