@@ -1,6 +1,7 @@
 #include "cuda_utils.cuh"
 #include "gsplat_rasterizer.hpp"
 #include "matrix_gpu.hpp"
+#include <__clang_cuda_builtin_vars.h>
 #include <cfloat>
 #include <cuda_device_runtime_api.h>
 #include <cuda_runtime.h>
@@ -647,11 +648,44 @@ void gsplat_tile_paint(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d,
   cudaFree(d_imgmask);
 }
 
+__device__ inline vec2f gsplatTilePixelScreenCoords(SplatTileInfo d_tileinfo,
+                                                    vec2i tileIdx,
+                                                    vec2i pixIdx) {
+
+  int gx = tileIdx.x * d_tileinfo.size.x + pixIdx.x;
+  int gy = tileIdx.y * d_tileinfo.size.y + pixIdx.y;
+  return vec2f(gx + 0.5, gy + 0.5);
+}
+
+__global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene,
+                                           SplatData2DGPU d_splats2d,
+                                           SplatTileInfo d_tileinfo,
+                                           vec2i tileIdx, int tmns,
+                                           float *d_cacheAlpha) {
+
+  int pidx = blockDim.x * blockIdx.x + threadIdx.x;    // x of pixel on tile
+  int pidy = blockDim.y * blockIdx.y + threadIdx.y;    // y of pixel on tile
+  int spid = blockDim.z * blockDim.z + threadIdx.z;    // spid-th splat on tile
+  int tid = tileIdx.y * d_tileinfo.size.x + tileIdx.x; // tile 1d idx
+  int toff = d_tileinfo.index.offset[tid];
+  int tstr = d_tileinfo.index.stride[tid];
+
+  if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y) {
+    vec2f p =
+        gsplatTilePixelScreenCoords(d_tileinfo, tileIdx, vec2i(pidx, pidy));
+
+    // TODO
+    if (spid < tstr) {
+    } else {
+    }
+  }
+}
+
 void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d,
                         SplatTileInfo d_tileinfo, vec4f *d_image) {
   SplatTileInfo h_tileInfo = splat_tileinfo_to_host(d_tileinfo);
-  int tnpx = h_tileInfo.size.x * h_tileInfo.size.y;
   int tmns = getTileMaxNumSplats(h_tileInfo);
+  int tnpx = h_tileInfo.size.x * h_tileInfo.size.y;
   float *d_cacheAlpha;
   float *d_cacheTrans;
   float4 *d_cacheColor;
