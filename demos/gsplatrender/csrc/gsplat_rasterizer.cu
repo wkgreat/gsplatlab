@@ -652,7 +652,7 @@ __global__ void gsplat_image_opacity_kernel(vec4f *d_image, bool *d_imgmask,
       rgba.x = rgba.x + rgba.w * d_scene.bgcolor.x;
       rgba.y = rgba.y + rgba.w * d_scene.bgcolor.y;
       rgba.z = rgba.z + rgba.w * d_scene.bgcolor.z;
-      rgba.w = 1.0 - rgba.w; // opacity
+      rgba.w = 1.0; // opacity
       d_image[idx] = rgba;
     }
   }

@@ -1,3 +1,15 @@
-[target]
+[workspace]
+authors = ["wk"]
+channels = ["conda-forge"]
+name = "gsplatlab"
+platforms = ["linux-64"]
 
-
+[dependencies]
+# 系统 clangd 18 不支持 CUDA 13.2（找不到 libdevice、CUDA 13 的 wrapper 头也变了），
+# 这里用 conda-forge 的 clang 23。
+#   clang-tools -> clangd / clang-format
+#   clang       -> resource-dir（__clang_cuda_runtime_wrapper.h 等）
+#   clangxx     -> clang++
+clang-tools = "23.*"
+clang = "23.*"
+clangxx = "23.*"

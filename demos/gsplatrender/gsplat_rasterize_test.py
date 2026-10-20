@@ -1,6 +1,5 @@
 import numpy as np
 from gsplatrender import gsplat_rasterize
-from ipycanvas import Canvas
 from PIL import Image
 from plyfile import PlyData
 from pyglm import glm
@@ -103,7 +102,6 @@ class SplatRenderer:
         self.scene.fovy = glm.pi() / 2.0
         self.scene.width = width
         self.scene.height = height
-        self.canvas = Canvas(width=width, height=height)
         self.orbit_x = -90.0
         self.orbit_y = 0
         self.orbit_r = 2

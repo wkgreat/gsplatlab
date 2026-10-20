@@ -1,28 +1,24 @@
-# !! 本文件由 scripts/clangd/switch.py 自动生成 (preset=windows)，不要手改。
-#   要改内容请改 scripts/clangd/templates/python_numpy_cuda.clangd，然后重跑：
-#       python scripts/clangd/switch.py --preset windows
-#
-# flavor: python + numpy + CUDA（不含 torch）—— 3dgs/gsplatrender 用
+# gsplatrender 的 clangd 配置（Linux + CUDA 13.2 + RTX 5060 Ti / sm_120）
+# 注意：clangd 必须使用 .pixi/envs/default/bin/clangd（clang 23），
+# 系统 clangd 18 不支持 CUDA 13.2。
 CompileFlags:
   Add:
     - -std=c++17
-    - -ID:/conda/envs/ai/Include
-    - -ID:/conda/envs/ai/Lib/site-packages/numpy/_core/include
-    - -ID:/Program Files/NVIDIA/CUDA/v13.2/include
+    # Python / numpy 头文件来自 conda env gsplatlab（Python 3.11）
+    - -I/home/wk/miniconda3/envs/gsplatlab/include/python3.11
+    - -I/home/wk/miniconda3/envs/gsplatlab/lib/python3.11/site-packages/numpy/_core/include
+    # CUDA 13 起 CUB/Thrust/libcudacxx 挪到了 include/cccl
+    - -I/usr/local/cuda/include
+    - -I/usr/local/cuda/include/cccl
 ---
 If:
   PathMatch: .*\.(cu|cuh)
 CompileFlags:
   Add:
     - -xcuda
-    - --cuda-path=D:/Program Files/NVIDIA/CUDA/v13.2
-    # CUDA 13 起 CUB/Thrust/libcudacxx 被挪到 include/cccl/ 下，
-    # nvcc 会自动加这个目录，但 clangd(clang) 不会，故手动补上，
-    # 否则 <cub/cub.cuh> 这类头文件解析不到。
-    - -ID:/Program Files/NVIDIA/CUDA/v13.2/include/cccl
-    # IntelliSense only: clangd 靠它解析 arch 相关的 builtin。
-    # 真正编译时的 arch 由 nvcc / CUDAFLAGS 决定，跟这里无关。
-    - --cuda-gpu-arch=sm_89
+    - --cuda-path=/usr/local/cuda
+    # 仅 IntelliSense 用；实际编译的 arch 由 nvcc/CUDAFLAGS 决定
+    - --cuda-gpu-arch=sm_120
 Diagnostics:
   Suppress:
     - member_function_call_bad_type
@@ -30,3 +26,6 @@ Diagnostics:
     - err_typename_nested_not_found
     - ovl_no_viable_member_function_in_call
     - err_ovl_no_viable_member_function_in_call
+    # CUDA 13.2 的 CUB/Thrust 头文件里有一个 clang 23 不接受的
+    # __host__ deduction guide 注解，属于三方头噪音。
+    - deduction_guide_target_attr
