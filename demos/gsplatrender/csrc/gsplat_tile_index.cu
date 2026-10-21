@@ -7,17 +7,17 @@ namespace gsplat {
 
 size_t getTileMaxNumSplats(SplatTileInfo h_tileInfo) {
 
-  int maxStride = 0;
+    int maxStride = 0;
 
-  int nTiles = h_tileInfo.nums.x * h_tileInfo.nums.y;
+    int nTiles = h_tileInfo.nums.x * h_tileInfo.nums.y;
 
-  for (int i = 0; i < nTiles; ++i) {
-    if (h_tileInfo.index.stride[i] > maxStride) {
-      maxStride = h_tileInfo.index.stride[i];
+    for (int i = 0; i < nTiles; ++i) {
+        if (h_tileInfo.index.stride[i] > maxStride) {
+            maxStride = h_tileInfo.index.stride[i];
+        }
     }
-  }
 
-  return maxStride;
+    return maxStride;
 }
 
 } // namespace gsplat
