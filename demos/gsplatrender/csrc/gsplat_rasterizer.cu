@@ -604,7 +604,7 @@ __device__ inline vec2f gsplatTilePixelScreenCoords(SplatTileInfo d_tileinfo, ve
 }
 
 __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo,
-                                           vec2i tileIdx, int tmns, float *d_cacheAlpha) {
+                                           vec2i tileIdx, int tmns, float *d_cacheAlpha, float *d_cacheTrans) {
 
     int pidx = blockDim.x * blockIdx.x + threadIdx.x;    // x of pixel on tile
     int pidy = blockDim.y * blockIdx.y + threadIdx.y;    // y of pixel on tile
@@ -617,6 +617,7 @@ __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU
 
     if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y) {
         vec2f p = gsplatTilePixelScreenCoords(d_tileinfo, tileIdx, vec2i(pidx, pidy));
+        float alpha = 0.0f;
         if (enid < tstr) {
             int spid = d_tileinfo.index.entries[toff + enid]; // splat id in d_splats2d
             vec2f mu = d_splats2d.pos2d[spid];
@@ -625,13 +626,15 @@ __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU
             float w = compute_weight(dist, cov2d);
             if (w >= 0.001) {
                 float a = d_splats2d.color[spid].w;
-                d_cacheAlpha[cacheIdx] = a * w;
+                alpha = a * w;
             } else {
-                d_cacheAlpha[cacheIdx] = 0.0f;
+                alpha = 0.0f;
             }
         } else {
-            d_cacheAlpha[cacheIdx] = 0.0f;
+            alpha = 0.0f;
         }
+        d_cacheAlpha[cacheIdx] = alpha;
+        d_cacheTrans[cacheIdx] = 1.0 - alpha;
     }
 }
 
