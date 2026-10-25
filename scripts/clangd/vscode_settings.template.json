@@ -21,7 +21,7 @@
   "C_Cpp.formatting": "clangFormat",
   "clangd.path": "{{CLANGD_PATH}}",
   "clangd.arguments": [
-    "--fallback-style=file",
+    "--fallback-style=LLVM",
     "--background-index"
   ],
   "python-envs.defaultEnvManager": "ms-python.python:conda",

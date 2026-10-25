@@ -64,6 +64,7 @@ struct alignas(16) vec4f {
     }
     __host__ __device__ float &operator[](int i) { return (&x)[i]; }
     __host__ __device__ float operator[](int i) const { return (&x)[i]; }
+    __host__ __device__ vec4f operator+(vec4f a) const { return vec4f(a.x + x, a.y + y, a.z + z, a.w + w); }
     __host__ __device__ vec2f xy() { return {x, y}; }
     __host__ __device__ vec3f xyz() { return {x, y, z}; }
 };
