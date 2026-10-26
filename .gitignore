@@ -1,6 +1,7 @@
 build
 __pycache__
 *.pyd
+*.dll
 .cache
 profile
 .pixi
@@ -8,4 +9,6 @@ profile
 
 # 由 scripts/clangd/gen_clangd.py 按机器生成（含本机路径），不入库
 demos/gsplatrender/.clangd
+cugsplat/.clangd
+pygsplat/.clangd
 .vscode/settings.json

@@ -2,6 +2,8 @@
 
 生成（覆盖写，内容相同则跳过）：
   - demos/gsplatrender/.clangd
+  - cugsplat/.clangd
+  - pygsplat/.clangd
   - .vscode/settings.json
 
 机器相关路径全部在运行时推导：
@@ -22,7 +24,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE_DIR = Path(__file__).resolve().parent
 
-CLANGD_OUT = REPO_ROOT / "demos" / "gsplatrender" / ".clangd"
+CLANGD_OUTS = [
+    REPO_ROOT / "demos" / "gsplatrender" / ".clangd",
+    REPO_ROOT / "cugsplat" / ".clangd",
+    REPO_ROOT / "pygsplat" / ".clangd",
+]
 VSCODE_OUT = REPO_ROOT / ".vscode" / "settings.json"
 
 
@@ -96,7 +102,7 @@ def yaml_flag(flag: str) -> str:
 
 
 def render_clangd(cuda: Path | None, cuda_arch: str) -> str:
-    header_flags = ["-std=c++17"]
+    header_flags = ["-std=c++17", f"-I{fwd(REPO_ROOT / 'cugsplat')}"]
     for inc in python_include_dirs():
         header_flags.append(f"-I{fwd(inc)}")
     numpy_inc = numpy_include_dir()
@@ -158,8 +164,10 @@ def main() -> int:
     cuda_arch = os.environ.get("GSPLAT_CUDA_ARCH", "sm_120")
 
     changed = []
-    if write_if_changed(CLANGD_OUT, render_clangd(cuda, cuda_arch)):
-        changed.append(CLANGD_OUT)
+    clangd_content = render_clangd(cuda, cuda_arch)
+    for out in CLANGD_OUTS:
+        if write_if_changed(out, clangd_content):
+            changed.append(out)
     if write_if_changed(VSCODE_OUT, render_vscode()):
         changed.append(VSCODE_OUT)
 

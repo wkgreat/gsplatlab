@@ -1,11 +1,10 @@
 #include "cuda_utils.cuh"
 #include "gsplat_rasterizer.hpp"
 #include "matrix_gpu.hpp"
-#include <__clang_cuda_builtin_vars.h>
-#include <__clang_cuda_runtime_wrapper.h>
 #include <cfloat>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cuda_device_runtime_api.h>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
@@ -604,11 +603,15 @@ void gsplat_tile_paint(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTi
     cudaFree(d_imgmask);
 }
 
-__device__ inline vec2f gsplatTilePixelScreenCoords(SplatTileInfo d_tileinfo, vec2i tileIdx, vec2i pixIdx) {
-
+__device__ inline vec2i gsplatTileLocalPixIdxToGlobalPixIdx(SplatTileInfo d_tileinfo, vec2i tileIdx, vec2i pixIdx) {
     int gx = tileIdx.x * d_tileinfo.size.x + pixIdx.x;
     int gy = tileIdx.y * d_tileinfo.size.y + pixIdx.y;
-    return vec2f(gx + 0.5, gy + 0.5);
+    return vec2i(gx, gy);
+}
+
+__device__ inline vec2f gsplatTileLocalPixelToScreenCoords(SplatTileInfo d_tileinfo, vec2i tileIdx, vec2i pixIdx) {
+    vec2i gidx = gsplatTileLocalPixIdxToGlobalPixIdx(d_tileinfo, tileIdx, pixIdx);
+    return vec2f(gidx.x + 0.5, gidx.y + 0.5);
 }
 
 __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo,
@@ -623,7 +626,7 @@ __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU
     int cacheIdx = enid * d_tileinfo.size.x * d_tileinfo.size.y + pidy * d_tileinfo.size.x + pidx;
 
     if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y) {
-        vec2f p = gsplatTilePixelScreenCoords(d_tileinfo, tileIdx, vec2i(pidx, pidy));
+        vec2f p = gsplatTileLocalPixelToScreenCoords(d_tileinfo, tileIdx, vec2i(pidx, pidy));
         vec4f c;
         if (enid < tstr) {
             int spid = d_tileinfo.index.entries[toff + enid]; // splat id in d_splats2d
@@ -654,20 +657,20 @@ void gsplatTileTransCumProd(SplatTileInfo d_tileinfo, int tmns, float *d_cacheTr
     void *d_temp;
     size_t tempbytes = 0;
     std::int64_t nsegs = d_tileinfo.size.x * d_tileinfo.size.y;
-    std::vector<size_t> h_begin(nsegs);
-    std::vector<size_t> h_end(nsegs);
+    std::vector<unsigned int> h_begin(nsegs);
+    std::vector<unsigned int> h_end(nsegs);
 
     for (size_t i = 0; i < nsegs; ++i) {
         h_begin[i] = i * tmns;
         h_end[i] = h_begin[i] + tmns;
     }
 
-    size_t *d_begin;
-    size_t *d_end;
+    unsigned int *d_begin;
+    unsigned int *d_end;
     cudaMalloc(&d_begin, sizeof(size_t) * nsegs);
     cudaMalloc(&d_end, sizeof(size_t) * nsegs);
-    cudaMemcpy(d_begin, h_begin, sizeof(size_t) * nsegs, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_end, h_end, sizeof(size_t) * nsegs, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_begin, h_begin.data(), sizeof(unsigned int) * nsegs, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_end, h_end.data(), sizeof(unsigned int) * nsegs, cudaMemcpyHostToDevice);
 
     cub::DeviceSegmentedScan::ExclusiveSegmentedScan(nullptr, tempbytes, d_cacheTrans, d_cacheTrans, d_begin, d_end,
                                                      nsegs, mulop, 1.0f);
@@ -682,12 +685,9 @@ void gsplatTileTransCumProd(SplatTileInfo d_tileinfo, int tmns, float *d_cacheTr
 
 __global__ void gsplatTilePixelSplatColorKernel(SplatTileInfo d_tileinfo, vec2i tileIdx, vec4f *d_cacheColor,
                                                 float *d_cacheTrans) {
-    int pidx = blockDim.x * blockIdx.x + threadIdx.x;    // x of pixel on tile
-    int pidy = blockDim.y * blockIdx.y + threadIdx.y;    // y of pixel on tile
-    int enid = blockDim.z * blockDim.z + threadIdx.z;    // index entry id on tile (enid-th splat on tile)
-    int tid = tileIdx.y * d_tileinfo.size.x + tileIdx.x; // tile 1d idx
-    int toff = d_tileinfo.index.offset[tid];
-    int tstr = d_tileinfo.index.stride[tid];
+    int pidx = blockDim.x * blockIdx.x + threadIdx.x; // x of pixel on tile
+    int pidy = blockDim.y * blockIdx.y + threadIdx.y; // y of pixel on tile
+    int enid = blockDim.z * blockDim.z + threadIdx.z; // index entry id on tile (enid-th splat on tile)
     int cacheIdx = enid * d_tileinfo.size.x * d_tileinfo.size.y + pidy * d_tileinfo.size.x + pidx;
     if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y) {
         vec4f color = d_cacheColor[cacheIdx];
@@ -697,11 +697,12 @@ __global__ void gsplatTilePixelSplatColorKernel(SplatTileInfo d_tileinfo, vec2i 
         color.y = color.y * alpha * trans;
         color.z = color.z * alpha * trans;
         color.w = trans * (1.0 - alpha);
+        d_cacheColor[cacheIdx] = color;
     }
 }
 
 struct ColorSumOp {
-    __device__ __forceinline__ vec4f operator()(vec4f &a, vec4f &b) const { return a + b; }
+    __device__ __forceinline__ vec4f operator()(const vec4f &a, const vec4f &b) const { return a + b; }
 };
 
 cudaError_t gsplatTilePixelFinalColor(SplatTileInfo d_tileinfo, vec2i tileIdx, int tmns, vec4f *d_cacheColor,
@@ -714,9 +715,16 @@ cudaError_t gsplatTilePixelFinalColor(SplatTileInfo d_tileinfo, vec2i tileIdx, i
     return err;
 }
 
-__global__ void gsplatTileColor2ImageKernel(SplatTileInfo d_tileinfo, vec2i tileIdx, vec4f *d_tilecolor,
-                                            vec4f *d_image) {
-    // TODO
+__global__ void gsplatTileColor2ImageKernel(SplatSceneGPU d_scene, SplatTileInfo d_tileinfo, vec2i tileIdx,
+                                            vec4f *d_tilecolor, vec4f *d_image) {
+
+    unsigned int px = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int py = blockDim.y * blockIdx.y + threadIdx.y;
+    if (px < d_tileinfo.size.x && py < d_tileinfo.size.y) {
+        vec2i pixIdx(px, py);
+        vec2i imgIdx = gsplatTileLocalPixIdxToGlobalPixIdx(d_tileinfo, tileIdx, pixIdx);
+        d_image[imgIdx.y * d_scene.width + imgIdx.x] = d_tilecolor[py * d_tileinfo.size.x + px];
+    }
 }
 
 void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo, vec4f *d_image) {
@@ -743,10 +751,12 @@ void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatT
             vec2i tileIdx(tileX, tileY);
             gsplatTileAlphaCacheKernel<<<blockNum, blockDim>>>(d_scene, d_splats2d, d_tileinfo, tileIdx, tmns,
                                                                d_cacheColor, d_cacheTrans);
+            fprintf(stdout, "%s tile=(%d,%d)\n", __FUNCTION__, tileX, tileY);
             gsplatTileTransCumProd(d_tileinfo, tmns, d_cacheTrans);
             gsplatTilePixelSplatColorKernel<<<blockNum, blockDim>>>(d_tileinfo, tileIdx, d_cacheColor, d_cacheTrans);
             gsplatTilePixelFinalColor(d_tileinfo, tileIdx, tmns, d_cacheColor, d_tilecolor);
-            gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_tileinfo, tileIdx, d_tilecolor, d_image);
+            gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx, d_tilecolor,
+                                                                        d_image);
         }
     }
     cudaFree(d_tilecolor);
@@ -825,7 +835,7 @@ void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_imag
     SplatData2DGPU d_splats2d = gsplat_data_2d_gpu_create(nsplats);
 
     gsplat_compute_gpu(d_scene, d_splats, d_splats2d);
-    cuda::CUDA_CHECK_LAST_ERROR(debug_print);
+    CUDA_CHECK_LAST_ERROR();
 
     SplatTileInfo d_tileinfo = gsplat_tile_info_create(d_scene, d_splats2d);
 
@@ -841,11 +851,11 @@ void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_imag
                 d_scene.bgcolor.w);
 
     image_set_color_gpu(d_image, d_scene);
-    cuda::CUDA_CHECK_LAST_ERROR(debug_print);
+    CUDA_CHECK_LAST_ERROR();
 
     gsplat_tile_paint(d_scene, d_splats2d, d_tileinfo, d_image);
-
-    cuda::CUDA_CHECK_LAST_ERROR(debug_print);
+    // gsplat_tile_paint2(d_scene, d_splats2d, d_tileinfo, d_image);
+    CUDA_CHECK_LAST_ERROR();
 
     // image output
     float *h_image = (float *)malloc(imageByteSize);

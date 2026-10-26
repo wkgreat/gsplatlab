@@ -6,6 +6,15 @@ CompileFlags:
     # numeric_limits<...>::max()；NOMINMAX 关掉它。Linux 上是空操作。
     - "-DNOMINMAX"
 {{HEADER_FLAGS}}
+# Include Cleaner 不要把 clang 内部头（__clang_cuda_*.h 等）当成可补全的头。
+Diagnostics:
+  Includes:
+    IgnoreHeader:
+      - ".*__clang.*"
+# clangd 没有“按头文件名过滤自动引入”的选项，只能在项目内整体关闭补全时的
+# 自动 include，避免 CUDA 下插入 __clang_cuda_*.h 这类内部头。
+Completion:
+  HeaderInsertion: Never
 ---
 If:
   PathMatch: .*\.(cu|cuh)
