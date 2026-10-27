@@ -621,7 +621,8 @@ __device__ inline vec2f gsplatTileLocalPixelToScreenCoords(SplatTileInfo d_tilei
 }
 
 __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo,
-                                           vec2i tileIdx, int tmns, vec4f *d_cacheColor, float *d_cacheTrans) {
+                                           vec2i tileIdx, int stride, int tmns, vec4f *d_cacheColor,
+                                           float *d_cacheTrans) {
 
     int pidx = blockDim.x * blockIdx.x + threadIdx.x;    // x of pixel on tile
     int pidy = blockDim.y * blockIdx.y + threadIdx.y;    // y of pixel on tile
@@ -629,7 +630,7 @@ __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU
     int tid = tileIdx.y * d_tileinfo.nums.x + tileIdx.x; // tile 1d idx
     int cacheIdx = (pidy * d_tileinfo.size.x + pidx) * tmns + enid;
 
-    if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y && enid < tmns) {
+    if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y && enid < stride) {
         int toff = d_tileinfo.index.offset[tid];
         int tstr = d_tileinfo.index.stride[tid];
         vec2f p = gsplatTileLocalPixelToScreenCoords(d_tileinfo, tileIdx, vec2i(pidx, pidy));
@@ -660,7 +661,7 @@ struct MultiplyOp {
     __device__ float operator()(float a, float b) const { return a * b; }
 };
 
-void gsplatTileTransCumProd(SplatTileInfo d_tileinfo, int tmns, float *d_cacheTrans) {
+void gsplatTileTransCumProd(SplatTileInfo d_tileinfo, int stride, int tmns, float *d_cacheTrans) {
 
     MultiplyOp mulop;
     void *d_temp;
@@ -671,7 +672,7 @@ void gsplatTileTransCumProd(SplatTileInfo d_tileinfo, int tmns, float *d_cacheTr
 
     for (size_t i = 0; i < nsegs; ++i) {
         h_begin[i] = i * tmns;
-        h_end[i] = h_begin[i] + tmns;
+        h_end[i] = h_begin[i] + stride;
     }
 
     unsigned int *d_begin;
@@ -693,12 +694,12 @@ void gsplatTileTransCumProd(SplatTileInfo d_tileinfo, int tmns, float *d_cacheTr
 }
 
 __global__ void gsplatTilePixelSplatColorKernel(SplatTileInfo d_tileinfo, vec2i tileIdx, vec4f *d_cacheColor,
-                                                float *d_cacheTrans, int tmns) {
+                                                float *d_cacheTrans, int stride, int tmns) {
     int pidx = blockDim.x * blockIdx.x + threadIdx.x; // x of pixel on tile
     int pidy = blockDim.y * blockIdx.y + threadIdx.y; // y of pixel on tile
     int enid = blockDim.z * blockIdx.z + threadIdx.z; // index entry id on tile (enid-th splat on tile)
     int cacheIdx = (pidy * d_tileinfo.size.x + pidx) * tmns + enid;
-    if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y && enid < tmns) {
+    if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y && enid < stride) {
         vec4f color = d_cacheColor[cacheIdx];
         float alpha = color.w;
         float trans = d_cacheTrans[cacheIdx];
@@ -714,13 +715,34 @@ struct ColorSumOp {
     __device__ __forceinline__ vec4f operator()(const vec4f &a, const vec4f &b) const { return a + b; }
 };
 
-cudaError_t gsplatTilePixelFinalColor(SplatTileInfo d_tileinfo, vec2i tileIdx, int tmns, vec4f *d_cacheColor,
-                                      vec4f *d_tilecolor) {
+cudaError_t gsplatTilePixelFinalColor(SplatTileInfo d_tileinfo, vec2i tileIdx, int stride, int tmns,
+                                      vec4f *d_cacheColor, vec4f *d_tilecolor) {
 
     ColorSumOp sumop;
     std::int64_t nsegs = d_tileinfo.size.x * d_tileinfo.size.y; // num of pixels of tile
+
+    std::vector<unsigned int> h_begin(nsegs);
+    std::vector<unsigned int> h_end(nsegs);
+
+    for (size_t i = 0; i < nsegs; ++i) {
+        h_begin[i] = i * tmns;
+        h_end[i] = h_begin[i] + stride;
+    }
+
+    unsigned int *d_begin;
+    unsigned int *d_end;
+    cudaMalloc(&d_begin, sizeof(size_t) * nsegs);
+    cudaMalloc(&d_end, sizeof(size_t) * nsegs);
+    cudaMemcpy(d_begin, h_begin.data(), sizeof(unsigned int) * nsegs, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_end, h_end.data(), sizeof(unsigned int) * nsegs, cudaMemcpyHostToDevice);
+
     vec4f initColor{0.0, 0.0, 0.0, 0.0};
-    cudaError_t err = cub::DeviceSegmentedReduce::Reduce(d_cacheColor, d_tilecolor, nsegs, tmns, sumop, initColor);
+    cudaError_t err =
+        cub::DeviceSegmentedReduce::Reduce(d_cacheColor, d_tilecolor, nsegs, d_begin, d_end, sumop, initColor);
+
+    cudaFree(d_begin);
+    cudaFree(d_end);
+
     return err;
 }
 
@@ -739,6 +761,19 @@ __global__ void gsplatTileColor2ImageKernel(SplatSceneGPU d_scene, SplatTileInfo
             color.y += trans * d_scene.bgcolor.y;
             color.z += trans * d_scene.bgcolor.z;
             color.w = 1.0f;
+            d_image[imgIdx.y * d_scene.width + imgIdx.x] = color;
+        }
+    }
+}
+
+__global__ void gsplatTileSingleColor2ImageKernel(SplatSceneGPU d_scene, SplatTileInfo d_tileinfo, vec2i tileIdx,
+                                                  vec4f color, vec4f *d_image) {
+    unsigned int px = blockDim.x * blockIdx.x + threadIdx.x;
+    unsigned int py = blockDim.y * blockIdx.y + threadIdx.y;
+    if (px < d_tileinfo.size.x && py < d_tileinfo.size.y) {
+        vec2i pixIdx(px, py);
+        vec2i imgIdx = gsplatTileLocalPixIdxToGlobalPixIdx(d_tileinfo, tileIdx, pixIdx);
+        if (imgIdx.x < d_scene.width && imgIdx.y < d_scene.height) {
             d_image[imgIdx.y * d_scene.width + imgIdx.x] = color;
         }
     }
@@ -773,10 +808,6 @@ void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatT
 
     fprintf(stdout, "%s tmns=%d tnpx=%zu\n", __FUNCTION__, tmns, tnpx);
 
-    dim3 dimSize(d_tileinfo.size.x, d_tileinfo.size.y, tmns);
-    dim3 blockDim(8, 8, 8);
-    dim3 blockNum = cuda::BLOCKNUM(blockDim, dimSize);
-
     dim3 tileDimSize(d_tileinfo.size.x, d_tileinfo.size.y, 1);
     dim3 tileBlockDim(16, 16, 1);
     dim3 tileBlockNum = cuda::BLOCKNUM(tileBlockDim, tileDimSize);
@@ -784,14 +815,25 @@ void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatT
     for (int tileX = 0; tileX < d_tileinfo.nums.x; ++tileX) {
         for (int tileY = 0; tileY < d_tileinfo.nums.y; ++tileY) {
             vec2i tileIdx(tileX, tileY);
-            gsplatTileAlphaCacheKernel<<<blockNum, blockDim>>>(d_scene, d_splats2d, d_tileinfo, tileIdx, tmns,
-                                                               d_cacheColor, d_cacheTrans);
-            gsplatTileTransCumProd(d_tileinfo, tmns, d_cacheTrans);
-            gsplatTilePixelSplatColorKernel<<<blockNum, blockDim>>>(d_tileinfo, tileIdx, d_cacheColor, d_cacheTrans,
-                                                                    tmns);
-            gsplatTilePixelFinalColor(d_tileinfo, tileIdx, tmns, d_cacheColor, d_tilecolor);
-            gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx, d_tilecolor,
-                                                                        d_image);
+            int tid = tileY * d_tileinfo.nums.x + tileX;
+            int stride = h_tileInfo.index.stride[tid];
+            dim3 dimSize(d_tileinfo.size.x, d_tileinfo.size.y, stride);
+            dim3 blockDim(8, 8, 8);
+            dim3 blockNum = cuda::BLOCKNUM(blockDim, dimSize);
+
+            if (stride > 0) {
+                gsplatTileAlphaCacheKernel<<<blockNum, blockDim>>>(d_scene, d_splats2d, d_tileinfo, tileIdx, stride,
+                                                                   tmns, d_cacheColor, d_cacheTrans);
+                gsplatTileTransCumProd(d_tileinfo, stride, tmns, d_cacheTrans);
+                gsplatTilePixelSplatColorKernel<<<blockNum, blockDim>>>(d_tileinfo, tileIdx, d_cacheColor, d_cacheTrans,
+                                                                        stride, tmns);
+                gsplatTilePixelFinalColor(d_tileinfo, tileIdx, stride, tmns, d_cacheColor, d_tilecolor);
+                gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx, d_tilecolor,
+                                                                            d_image);
+            } else {
+                gsplatTileSingleColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx,
+                                                                                  d_scene.bgcolor, d_image);
+            }
         }
     }
     cudaFree(d_tilecolor);
