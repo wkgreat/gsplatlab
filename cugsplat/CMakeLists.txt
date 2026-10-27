@@ -5,6 +5,14 @@ add_library(cugsplat SHARED
 )
 
 target_include_directories(cugsplat PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# CUDA 13 把 CUB/Thrust 移到了 <toolkit>/include/cccl，需要显式加入搜索路径。
+foreach(_cuda_inc IN LISTS CUDAToolkit_INCLUDE_DIRS)
+    if(EXISTS "${_cuda_inc}/cccl/cub/cub.cuh")
+        target_include_directories(cugsplat PRIVATE "${_cuda_inc}/cccl")
+    endif()
+endforeach()
+unset(_cuda_inc)
 target_compile_definitions(cugsplat PRIVATE CUGSPLAT_EXPORTS NOMINMAX)
 target_link_libraries(cugsplat PRIVATE CUDA::cudart)
 

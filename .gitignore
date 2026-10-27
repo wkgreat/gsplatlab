@@ -12,3 +12,4 @@ demos/gsplatrender/.clangd
 cugsplat/.clangd
 pygsplat/.clangd
 .vscode/settings.json
+/buildcugsplat/
