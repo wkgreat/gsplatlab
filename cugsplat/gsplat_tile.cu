@@ -271,8 +271,9 @@ void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatT
             dim3 blockNum = cuda::BLOCKNUM(blockDim, dimSize);
 
             if (stride > 0) {
-                gsplatTileAlphaCacheKernel<<<blockNum, blockDim>>>(d_scene, d_splats2d, d_tileinfo, tileIdx, stride,
-                                                                   tmns, d_cacheColor, d_cacheTrans);
+                CUDATRACE("gsplatTileAlphaCacheKernel",
+                          gsplatTileAlphaCacheKernel<<<blockNum, blockDim>>>(d_scene, d_splats2d, d_tileinfo, tileIdx,
+                                                                             stride, tmns, d_cacheColor, d_cacheTrans));
                 gsplatTileTransCumProd(d_tileinfo, tid, stride, tmns, d_cacheTrans, tileSegCache);
                 gsplatTilePixelSplatColorKernel<<<blockNum, blockDim>>>(d_tileinfo, tileIdx, d_cacheColor, d_cacheTrans,
                                                                         stride, tmns);

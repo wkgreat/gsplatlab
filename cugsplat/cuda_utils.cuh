@@ -6,6 +6,8 @@
 #include <driver_types.h>
 #include <memory.h>
 #include <vector_types.h>
+#include <nvtx3/nvToolsExt.h>
+#include <string>
 
 namespace gsplat {
 namespace cuda {
@@ -22,6 +24,20 @@ namespace cuda {
 #define CUDA_CHECK(call)                                                                                               \
     do {                                                                                                               \
         cudaError_t err = (call);                                                                                      \
+        if (err != cudaSuccess) {                                                                                      \
+            fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                    \
+            return;                                                                                                    \
+        }                                                                                                              \
+    } while (0)
+
+// 只用于 kernel launch：launch 表达式本身是 void，不能赋给 cudaError_t，
+// 必须在 launch 之后用 cudaPeekAtLastError() 取启动错误。
+#define CUDATRACE(tag, ...)                                                                                            \
+    do {                                                                                                               \
+        nvtxRangePushA(tag);                                                                                           \
+        __VA_ARGS__;                                                                                                   \
+        cudaError_t err = cudaPeekAtLastError();                                                                       \
+        nvtxRangePop();                                                                                                \
         if (err != cudaSuccess) {                                                                                      \
             fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                    \
             return;                                                                                                    \
