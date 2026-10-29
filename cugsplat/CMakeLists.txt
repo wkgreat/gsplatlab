@@ -16,6 +16,12 @@ unset(_cuda_inc)
 target_compile_definitions(cugsplat PRIVATE CUGSPLAT_EXPORTS NOMINMAX)
 target_link_libraries(cugsplat PRIVATE CUDA::cudart)
 
+# -lineinfo：保留调试/性能分析用的行号信息，便于 ncu 等工具定位 kernel 热点。
+set(CMAKE_BUILD_TYPE RelWithDebInfo)
+target_compile_options(cugsplat PRIVATE
+    "$<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>"
+)
+
 set_target_properties(cugsplat PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     # gsplat_tile.cu 会调用 gsplat_rasterizer.cu 里定义的 compute_weight，
