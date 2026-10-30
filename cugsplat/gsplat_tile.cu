@@ -274,12 +274,16 @@ void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatT
                 CUDATRACE("gsplatTileAlphaCacheKernel",
                           gsplatTileAlphaCacheKernel<<<blockNum, blockDim>>>(d_scene, d_splats2d, d_tileinfo, tileIdx,
                                                                              stride, tmns, d_cacheColor, d_cacheTrans));
-                gsplatTileTransCumProd(d_tileinfo, tid, stride, tmns, d_cacheTrans, tileSegCache);
-                gsplatTilePixelSplatColorKernel<<<blockNum, blockDim>>>(d_tileinfo, tileIdx, d_cacheColor, d_cacheTrans,
-                                                                        stride, tmns);
-                gsplatTilePixelFinalColor(d_tileinfo, tid, stride, tmns, d_cacheColor, d_tilecolor, tileSegCache);
-                gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx, d_tilecolor,
-                                                                            d_image);
+                CUDATRACE("gsplatTileTransCumProd",
+                          gsplatTileTransCumProd(d_tileinfo, tid, stride, tmns, d_cacheTrans, tileSegCache));
+                CUDATRACE("gsplatTilePixelSplatColorKernel",
+                          gsplatTilePixelSplatColorKernel<<<blockNum, blockDim>>>(d_tileinfo, tileIdx, d_cacheColor,
+                                                                                  d_cacheTrans, stride, tmns));
+                CUDATRACE(
+                    "gsplatTilePixelFinalColor",
+                    gsplatTilePixelFinalColor(d_tileinfo, tid, stride, tmns, d_cacheColor, d_tilecolor, tileSegCache));
+                CUDATRACE("gsplatTileColor2ImageKernel", gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(
+                                                             d_scene, d_tileinfo, tileIdx, d_tilecolor, d_image));
             } else {
                 gsplatTileSingleColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx,
                                                                                   d_scene.bgcolor, d_image);

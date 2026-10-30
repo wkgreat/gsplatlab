@@ -40,7 +40,6 @@ namespace cuda {
         nvtxRangePop();                                                                                                \
         if (err != cudaSuccess) {                                                                                      \
             fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                    \
-            return;                                                                                                    \
         }                                                                                                              \
     } while (0)
 
@@ -51,6 +50,8 @@ inline unsigned int BLOCKNUM(unsigned int blockDim, unsigned int dimSize) {
 inline dim3 BLOCKNUM(dim3 blockDim, dim3 dimSize) {
     return {BLOCKNUM(blockDim.x, dimSize.x), BLOCKNUM(blockDim.y, dimSize.y), BLOCKNUM(blockDim.z, dimSize.z)};
 }
+
+inline cudaError_t cudaWarmUp() { return cudaFree(0); }
 
 } // namespace cuda
 

@@ -594,11 +594,11 @@ SplatDataGPU gsplat_data_gpu_create(SplatData &h_splats) {
     SplatDataGPU splats_gpu;
     int nsplats = h_splats.nsplats;
     splats_gpu.nsplats = nsplats;
-    cudaMalloc(&splats_gpu.pos3d, nsplats * sizeof(vec4f));
-    cudaMalloc(&splats_gpu.scale, nsplats * sizeof(vec4f));
-    cudaMalloc(&splats_gpu.rot, nsplats * sizeof(vec4f));
-    cudaMalloc(&splats_gpu.opacity, nsplats * sizeof(float));
-    cudaMalloc(&splats_gpu.sh, 48 * nsplats * sizeof(float));
+    CUDATRACE("cudaMalloc pos3d", cudaMalloc(&splats_gpu.pos3d, nsplats * sizeof(vec4f)));
+    CUDATRACE("cudaMalloc scale", cudaMalloc(&splats_gpu.scale, nsplats * sizeof(vec4f)));
+    CUDATRACE("cudaMalloc rot", cudaMalloc(&splats_gpu.rot, nsplats * sizeof(vec4f)));
+    CUDATRACE("cudaMalloc opacity", cudaMalloc(&splats_gpu.opacity, nsplats * sizeof(float)));
+    CUDATRACE("cudaMalloc sh", cudaMalloc(&splats_gpu.sh, 48 * nsplats * sizeof(float)));
 
     cudaMemcpy(splats_gpu.pos3d, h_splats.pos3d, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
     cudaMemcpy(splats_gpu.scale, h_splats.scale, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
@@ -637,6 +637,8 @@ void gsplat_data_2d_gpu_free(SplatData2DGPU &d_splats) {
 }
 
 void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_image, DebugPrintFn debug_print) {
+
+    CUDATRACE("cudaWarmUp", cuda::cudaWarmUp());
 
     cudaDeviceProp prop;
     int device = 0;
