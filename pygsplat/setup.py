@@ -41,6 +41,11 @@ cugsplat_bin_dir = Path(
 cugsplat_import_lib = "cugsplat.lib" if os.name == "nt" else "libcugsplat.so"
 cugsplat_runtime_lib = "cugsplat.dll" if os.name == "nt" else "libcugsplat.so"
 
+# Python 侧产物（_C 扩展 + cugsplat 运行时）统一放这里，源码树保持干净。
+pygsplat_build_dir = Path(
+    os.environ.get("PYGSPLAT_BUILD_DIR", REPO_ROOT / "build" / "pygsplat")
+)
+
 
 def find_first(dirs, name):
     for directory in dirs:
@@ -64,23 +69,34 @@ def require_cugsplat_runtime() -> Path:
 
 
 class BuildExtension(build_ext):
-    def build_extensions(self):
+    def run(self):
         if find_first((cugsplat_lib_dir, cugsplat_bin_dir), cugsplat_import_lib) is None:
             raise RuntimeError(
                 f"找不到 cugsplat 导入库：{cugsplat_lib_dir / cugsplat_import_lib}\n"
                 "请先执行 cmake --build 构建 cugsplat。"
             )
 
-        super().build_extensions()
+        super().run()
 
         # 把 cugsplat 运行时库放到 _C 扩展旁边：
         #   - Windows 下 _C.pyd 加载时需要能找到 cugsplat.dll
         #   - Linux 下配合 $ORIGIN 的 rpath 解析 libcugsplat.so
         runtime = require_cugsplat_runtime()
         ext_path = Path(self.get_ext_fullpath("pygsplat._C"))
-        for target_dir in {ext_path.parent, HERE / "pygsplat"}:
-            target_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(runtime, target_dir / runtime.name)
+
+        if self.inplace:
+            # editable 安装：setuptools 默认把 _C 直接写进源码树，这里搬到统一目录。
+            pygsplat_build_dir.mkdir(parents=True, exist_ok=True)
+            dest = pygsplat_build_dir / ext_path.name
+            if dest.exists():
+                dest.unlink()
+            if ext_path.exists():
+                shutil.move(str(ext_path), str(dest))
+            shutil.copy2(runtime, pygsplat_build_dir / runtime.name)
+        else:
+            # wheel 安装：_C 和运行时库一起进包目录。
+            ext_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(runtime, ext_path.parent / runtime.name)
 
 
 extra_compile_args = (
@@ -93,8 +109,11 @@ extra_link_args = [] if os.name == "nt" else ["-Wl,-rpath,$ORIGIN"]
 setup(
     name="pygsplat",
     version="0.0.0",
-    packages=["pygsplat"],
-    package_data={"pygsplat": [cugsplat_runtime_lib]},
+    packages=["pygsplat", "pygsplat.render"],
+    package_data={
+        "pygsplat": [cugsplat_runtime_lib],
+        "pygsplat.render": ["*.glsl"],
+    },
     ext_modules=[
         Extension(
             name="pygsplat._C",

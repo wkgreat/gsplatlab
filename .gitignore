@@ -13,3 +13,4 @@ cugsplat/.clangd
 pygsplat/.clangd
 .vscode/settings.json
 /buildcugsplat/
+output

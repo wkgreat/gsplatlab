@@ -18,6 +18,16 @@
   "[cuda-cpp]": {
     "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
   },
+  "[python]": {
+    // 保存时不要自动整理/删除未使用的 import
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "never",
+      "source.organizeImports.ruff": "never",
+      "source.fixAll": "never",
+      "source.fixAll.ruff": "never",
+      "source.unusedImports": "never"
+    }
+  },
   "C_Cpp.formatting": "clangFormat",
   "clangd.path": "{{CLANGD_PATH}}",
   "clangd.arguments": [
