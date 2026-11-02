@@ -3,10 +3,10 @@
 #include <driver_types.h>
 #include "gsplat_rasterizer.hpp"
 #include "cuda_utils.cuh"
-#include <vector>
 #include <cub/device/device_segmented_scan.cuh>
 #include <cub/device/device_segmented_reduce.cuh>
 #include "gsplat_tile.cuh"
+#include "gsplat_math.cuh"
 
 namespace gsplat {
 
@@ -55,7 +55,7 @@ __device__ inline vec2f gsplatTileLocalPixelToScreenCoords(SplatTileInfo d_tilei
     return vec2f(gidx.x + 0.5, gidx.y + 0.5);
 }
 
-__global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo,
+__global__ void gsplatTileAlphaCacheKernel(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
                                            vec2i tileIdx, int stride, int tmns, vec4f *d_cacheColor,
                                            float *d_cacheTrans) {
 
@@ -193,7 +193,7 @@ cudaError_t gsplatTilePixelFinalColor(SplatTileInfo d_tileinfo, unsigned int tid
     return err;
 }
 
-__global__ void gsplatTileColor2ImageKernel(SplatSceneGPU d_scene, SplatTileInfo d_tileinfo, vec2i tileIdx,
+__global__ void gsplatTileColor2ImageKernel(SplatScene d_scene, SplatTileInfo d_tileinfo, vec2i tileIdx,
                                             vec4f *d_tilecolor, vec4f *d_image) {
 
     unsigned int px = blockDim.x * blockIdx.x + threadIdx.x;
@@ -213,7 +213,7 @@ __global__ void gsplatTileColor2ImageKernel(SplatSceneGPU d_scene, SplatTileInfo
     }
 }
 
-__global__ void gsplatTileSingleColor2ImageKernel(SplatSceneGPU d_scene, SplatTileInfo d_tileinfo, vec2i tileIdx,
+__global__ void gsplatTileSingleColor2ImageKernel(SplatScene d_scene, SplatTileInfo d_tileinfo, vec2i tileIdx,
                                                   vec4f color, vec4f *d_image) {
     unsigned int px = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int py = blockDim.y * blockIdx.y + threadIdx.y;
@@ -226,7 +226,8 @@ __global__ void gsplatTileSingleColor2ImageKernel(SplatSceneGPU d_scene, SplatTi
     }
 }
 
-void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo, vec4f *d_image) {
+void gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
+                                   SplatImage d_image) {
     SplatTileInfo h_tileInfo = splat_tileinfo_to_host(d_tileinfo);
     int tmns = (int)getTileMaxNumSplats(h_tileInfo);
     size_t tnpx = (size_t)h_tileInfo.size.x * h_tileInfo.size.y;
@@ -283,10 +284,10 @@ void gsplat_tile_paint2(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatT
                     "gsplatTilePixelFinalColor",
                     gsplatTilePixelFinalColor(d_tileinfo, tid, stride, tmns, d_cacheColor, d_tilecolor, tileSegCache));
                 CUDATRACE("gsplatTileColor2ImageKernel", gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(
-                                                             d_scene, d_tileinfo, tileIdx, d_tilecolor, d_image));
+                                                             d_scene, d_tileinfo, tileIdx, d_tilecolor, d_image.image));
             } else {
                 gsplatTileSingleColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx,
-                                                                                  d_scene.bgcolor, d_image);
+                                                                                  d_scene.bgcolor, d_image.image);
             }
         }
     }

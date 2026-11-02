@@ -4,8 +4,6 @@
 #include <stdio.h>
 
 namespace gsplat {
-namespace matrix {
-namespace gpu {
 
 struct alignas(8) vec2i {
     int x = 0, y = 0;
@@ -329,7 +327,7 @@ __host__ __device__ inline vec3f normalize(const vec3f &v) { return v / length(v
 __host__ __device__ inline vec4f normalize(const vec4f &v) { return v / length(v); }
 
 // max
-__host__ __device__ inline vec3f max(const vec3f &a, const vec3f &b) {
+__host__ __device__ inline vec3f vec3f_max(const vec3f &a, const vec3f &b) {
 #ifdef __CUDA_ARCH__
     return {fmaxf(a.x, b.x), fmaxf(a.y, b.y), fmaxf(a.z, b.z)};
 #else
@@ -357,6 +355,4 @@ __host__ inline void print_mat4x4f(const mat4x4f &m) {
 
 // clang-format on
 
-} // namespace gpu
-} // namespace matrix
 } // namespace gsplat

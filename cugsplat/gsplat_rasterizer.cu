@@ -1,9 +1,7 @@
 #include "cuda_utils.cuh"
 #include "gsplat_rasterizer.hpp"
-#include "matrix_gpu.hpp"
 #include <cfloat>
 #include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <cuda_device_runtime_api.h>
 #include <cuda_runtime.h>
@@ -11,11 +9,9 @@
 #include <driver_types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <vector>
 #include <vector_types.h>
 #include "gsplat_tile.cuh"
-
-using namespace gsplat::matrix::gpu;
+#include "gsplat_math.cuh"
 
 namespace gsplat {
 
@@ -25,127 +21,23 @@ void showCompileTile() {
     fprintf(stdout, "gsplatlab compile time: %s %s\n", _date, _time);
 }
 
-__global__ void image_set_color_kernel(vec4f *d_image, SplatSceneGPU d_scene) {
+__global__ void image_set_color_kernel(SplatImage d_image, vec4f color) {
 
     int wid = blockDim.x * blockIdx.x + threadIdx.x;
     int hid = blockDim.y * blockIdx.y + threadIdx.y;
-    if (wid < d_scene.width && hid < d_scene.height) {
-        int idx = hid * d_scene.width + wid;
-        d_image[idx] = d_scene.bgcolor;
+    if (wid < d_image.width && hid < d_image.height) {
+        int idx = hid * d_image.width + wid;
+        d_image.image[idx] = color;
     }
 }
 
-void image_set_color_gpu(vec4f *d_image, SplatSceneGPU d_scene) {
+void splat_image_set_color_at_device(SplatImage d_image, vec4f color) {
     dim3 blockDim(16, 16, 1);
-    dim3 gridDim((blockDim.x + d_scene.width - 1) / blockDim.x, (blockDim.y + d_scene.height - 1) / blockDim.y, 1);
-    image_set_color_kernel<<<gridDim, blockDim, 0>>>(d_image, d_scene);
+    dim3 gridDim((blockDim.x + d_image.width - 1) / blockDim.x, (blockDim.y + d_image.height - 1) / blockDim.y, 1);
+    image_set_color_kernel<<<gridDim, blockDim, 0>>>(d_image, color);
 }
 
-__device__ mat2x3f compute_jacobian(vec4f &viewpos, vec2f &viewport, float fovy) {
-    float x = viewpos.x;
-    float y = viewpos.y;
-    float z = min(-0.05, viewpos.z);
-    float z2 = z * z;
-    float height = viewport.y;
-    float focal = height / (2.0 * tan(fovy * 0.5));
-
-    return mat2x3f(focal / z, 0.0, 0.0 - focal * x / z2, 0.0, focal / z, 0.0 - focal * y / z2);
-}
-
-__device__ mat3x3f quat_to_mat3(vec4f q) {
-    vec4f nq = normalize(q);
-
-    float x = nq.x;
-    float y = nq.y;
-    float z = nq.z;
-    float w = nq.w;
-
-    float xx = x * x;
-    float yy = y * y;
-    float zz = z * z;
-
-    float xy = x * y;
-    float xz = x * z;
-    float yz = y * z;
-
-    float wx = w * x;
-    float wy = w * y;
-    float wz = w * z;
-
-    return mat3x3f(1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy), 2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz),
-                   2.0 * (yz - wx), 2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy));
-}
-
-__device__ float clamp(float v, float a, float b) {
-    v = v < a ? a : v;
-    v = v > b ? b : v;
-    return v;
-}
-
-__device__ vec4f compute_rect(vec2f pixpos, mat2x2f cov2d) {
-    float u = pixpos.x;
-    float v = pixpos.y;
-    float sxx = cov2d[0][0];
-    float syy = cov2d[1][1];
-    float sxy = cov2d[0][1];
-    float trace = sxx + syy;
-    float det = max(sxx * syy - sxy * sxy, 1e-6);
-    float lambda_max = 0.5 * (trace + sqrt(max(0.0, trace * trace - 4.0 * det)));
-    float r = clamp(3.0 * sqrt(lambda_max), 1.0, 1024.0);
-    float xmin = u - r;
-    float xmax = u + r;
-    float ymin = v - r;
-    float ymax = v + r;
-    return vec4f(xmin, ymin, xmax, ymax);
-}
-
-__device__ vec3f compute_color(vec3f *sh, vec3f d) {
-
-    float x = d.x;
-    float y = d.y;
-    float z = d.z;
-
-    float x2 = x * x;
-    float y2 = y * y;
-    float z2 = z * z;
-    float xy = x * y;
-    float yz = y * z;
-    float xz = x * z;
-
-    const float SH_C0 = 0.28209479177387814;
-    const float SH_C1 = 0.4886025119029199;
-    const float SH_C2[5]{1.0925484305920792, -1.0925484305920792, 0.31539156525252005, -1.0925484305920792,
-                         0.5462742152960396};
-    const float SH_C3[7]{-0.5900435899266435, 2.890611442640554, -0.4570457994644658, 0.3731763325901154,
-                         -0.4570457994644658, 1.445305721320277, -0.5900435899266435};
-
-    vec3f ret = SH_C0 * sh[0];
-
-    // Degree 1
-    ret += SH_C1 * (-y * sh[1] + z * sh[2] - x * sh[3]);
-
-    // Degree 2
-    ret += SH_C2[0] * xy * sh[4];
-    ret += SH_C2[1] * yz * sh[5];
-    ret += SH_C2[2] * (2.0 * z2 - x2 - y2) * sh[6];
-    ret += SH_C2[3] * xz * sh[7];
-    ret += SH_C2[4] * (x2 - y2) * sh[8];
-
-    // Degree 3
-    ret += SH_C3[0] * y * (3.0 * x2 - y2) * sh[9];
-    ret += SH_C3[1] * xy * z * sh[10];
-    ret += SH_C3[2] * y * (4.0 * z2 - x2 - y2) * sh[11];
-    ret += SH_C3[3] * z * (2.0 * z2 - 3.0 * x2 - 3.0 * y2) * sh[12];
-    ret += SH_C3[4] * x * (4.0 * z2 - x2 - y2) * sh[13];
-    ret += SH_C3[5] * z * (x2 - y2) * sh[14];
-    ret += SH_C3[6] * x * (x2 - 3.0 * y2) * sh[15];
-
-    return max(ret + 0.5, vec3f(0, 0, 0));
-}
-
-__device__ float sigmoid(float x) { return 1.0f / (1 + exp(-x)); }
-
-__global__ void gsplat_compute_kernel(SplatSceneGPU d_scene, SplatDataGPU d_splats, SplatData2DGPU d_splats2d) {
+__global__ void gsplat_compute_kernel(SplatScene d_scene, SplatData d_splats, SplatData2D d_splats2d) {
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id < 0 || id >= d_splats.nsplats) {
         return;
@@ -188,28 +80,17 @@ __global__ void gsplat_compute_kernel(SplatSceneGPU d_scene, SplatDataGPU d_spla
     d_splats2d.color[id] = color4;
 }
 
-void gsplat_compute_gpu(SplatSceneGPU d_scene, SplatDataGPU d_splats, SplatData2DGPU d_splats2d) {
+void gsplat_compute_at_device(SplatScene d_scene, SplatData d_splats, SplatData2D d_splats2d) {
     int blockDim = 128;
     int gridDim = (blockDim + d_splats.nsplats - 1) / blockDim;
     gsplat_compute_kernel<<<gridDim, blockDim>>>(d_scene, d_splats, d_splats2d);
-}
-
-__host__ __device__ float compute_weight(vec2f d, mat2x2f Cov2D) {
-    float a = Cov2D[0][0];
-    float b = Cov2D[1][0];
-    float c = Cov2D[1][1];
-    float s = max(a * c - b * b, 1e-6);
-    float r2 = (c * d.x * d.x - 2.0 * b * d.x * d.y + a * d.y * d.y) / s;
-    float weight = exp(-0.5 * r2);
-    return weight;
 }
 
 __device__ bool point_in_box(vec2f v, vec4f box) {
     return v.x >= box.x && v.x <= box.z && v.y >= box.y && v.y <= box.w;
 }
 
-__global__ void gsplat_pixel_splat_count_kernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d,
-                                                int *out_pixSplatCnt) {
+__global__ void gsplat_pixel_splat_count_kernel(SplatScene d_scene, SplatData2D d_splats2d, int *out_pixSplatCnt) {
 
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id >= d_splats2d.nsplats) {
@@ -244,7 +125,7 @@ __global__ void gsplat_pixel_splat_count_kernel(SplatSceneGPU d_scene, SplatData
     }
 }
 
-void gsplat_pixel_splat_count_gpu(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, int **out_pixSplatCnt) {
+void gsplat_pixel_splat_count_gpu(SplatScene d_scene, SplatData2D d_splats2d, int **out_pixSplatCnt) {
     int blockDim = 256;
     int gridDim = (blockDim + d_splats2d.nsplats - 1) / blockDim;
 
@@ -255,11 +136,11 @@ void gsplat_pixel_splat_count_gpu(SplatSceneGPU d_scene, SplatData2DGPU d_splats
 }
 
 __device__ __forceinline__ int clamp(int v, int a, int b) {
-    v = min(max(v, a), b);
+    v = v < a ? a : (v > b ? b : v);
     return v;
 }
 
-__device__ Box2D<int> gsplat_tile_box(SplatSceneGPU d_scene, SplatTileInfo d_tileinfo, int tileX, int tileY) {
+__device__ Box2D<int> gsplat_tile_box(SplatScene d_scene, SplatTileInfo d_tileinfo, int tileX, int tileY) {
 
     int xmin = tileX * d_tileinfo.size.x;
     int xmax = (tileX + 1) * d_tileinfo.size.x - 1;
@@ -280,8 +161,7 @@ template <typename T> __device__ __forceinline__ bool box_overlap(Box2D<T> a, Bo
     return range_overlap(a.x, b.x) && range_overlap(a.y, b.y);
 }
 
-__global__ void gsplat_tile_splat_count_kernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d,
-                                               SplatTileInfo d_tileinfo) {
+__global__ void gsplat_tile_splat_count_kernel(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo) {
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id >= d_splats2d.nsplats) {
         return;
@@ -300,8 +180,8 @@ __global__ void gsplat_tile_splat_count_kernel(SplatSceneGPU d_scene, SplatData2
     }
 }
 
-__global__ void gsplat_tile_splat_index_kernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d,
-                                               SplatTileInfo d_tileinfo, int *tileK) {
+__global__ void gsplat_tile_splat_index_kernel(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
+                                               int *tileK) {
 
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id >= d_splats2d.nsplats) {
@@ -325,7 +205,7 @@ __global__ void gsplat_tile_splat_index_kernel(SplatSceneGPU d_scene, SplatData2
     }
 }
 
-SplatTileInfo gsplat_tile_info_create(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d) {
+SplatTileInfo gsplat_tile_create_at_device(SplatScene d_scene, SplatData2D d_splats2d) {
 
     SplatTileInfo tileinfo;
     tileinfo.size.x = 64;
@@ -381,7 +261,7 @@ SplatTileInfo gsplat_tile_info_create(SplatSceneGPU d_scene, SplatData2DGPU d_sp
     return tileinfo;
 }
 
-void gsplat_tile_info_free(SplatTileInfo d_tileinfo) {
+void gsplat_tileinfo_free_at_device(SplatTileInfo d_tileinfo) {
     cudaFree(d_tileinfo.index.offset);
     cudaFree(d_tileinfo.index.stride);
     cudaFree(d_tileinfo.index.entries);
@@ -415,7 +295,7 @@ __global__ void fillInt32Kernel(int *d_vals, int val, size_t n) {
     d_vals[i] = val;
 }
 
-__global__ void gsplat_tile_bitonic_sort(SplatData2DGPU splat2d, int *d_entries, int n, int k, int j, bool asc) {
+__global__ void gsplat_tile_bitonic_sort(SplatData2D splat2d, int *d_entries, int n, int k, int j, bool asc) {
 
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     if (i >= n)
@@ -435,7 +315,7 @@ __global__ void gsplat_tile_bitonic_sort(SplatData2DGPU splat2d, int *d_entries,
     }
 }
 
-void gsplat_tile_splat_sort(SplatData2DGPU splats2d, SplatTileInfo h_tileinfo, SplatTileInfo d_tileinfo, int tileId,
+void gsplat_tile_splat_sort(SplatData2D splats2d, SplatTileInfo h_tileinfo, SplatTileInfo d_tileinfo, int tileId,
                             int *d_cache) {
 
     int n = h_tileinfo.index.stride[tileId];
@@ -461,7 +341,7 @@ void gsplat_tile_splat_sort(SplatData2DGPU splats2d, SplatTileInfo h_tileinfo, S
     cudaMemcpy(d_tileinfo.index.entries + s, d_cache, sizeof(int) * n, cudaMemcpyDeviceToDevice);
 }
 
-void gsplat_splat_sort(SplatData2DGPU splats2d, SplatTileInfo d_tileinfo) {
+void gsplat_data2d_sort_at_device(SplatData2D splats2d, SplatTileInfo d_tileinfo) {
 
     SplatTileInfo h_tileinfo = splat_tileinfo_to_host(d_tileinfo);
 
@@ -481,7 +361,7 @@ void gsplat_splat_sort(SplatData2DGPU splats2d, SplatTileInfo d_tileinfo) {
     free(h_tileinfo.index.entries);
 }
 
-__global__ void gsplat_rasterize_kernel(SplatSceneGPU scene, SplatData2DGPU splats2d, float *out_image) {
+__global__ void gsplat_rasterize_kernel(SplatScene scene, SplatData2D splats2d, float *out_image) {
 
     int id = blockDim.x * blockIdx.x + threadIdx.x;
     if (id >= splats2d.nsplats) {
@@ -501,8 +381,8 @@ __global__ void gsplat_rasterize_kernel(SplatSceneGPU scene, SplatData2DGPU spla
     }
 }
 
-__global__ void gsplat_tile_paint_kernel(SplatSceneGPU scene, SplatData2DGPU splats2d, SplatTileInfo tileinfo,
-                                         bool *imgmask, vec4f *image) {
+__global__ void gsplat_tile_paint_kernel(SplatScene scene, SplatData2D splats2d, SplatTileInfo tileinfo, bool *imgmask,
+                                         vec4f *image) {
     int tx = blockDim.x * blockIdx.x + threadIdx.x;
     int ty = blockDim.y * blockIdx.y + threadIdx.y;
     if (tx >= tileinfo.nums.x || ty >= tileinfo.nums.y) {
@@ -557,7 +437,7 @@ __global__ void gsplat_tile_paint_kernel(SplatSceneGPU scene, SplatData2DGPU spl
     }
 }
 
-__global__ void gsplat_image_opacity_kernel(vec4f *d_image, bool *d_imgmask, SplatSceneGPU d_scene) {
+__global__ void gsplat_image_opacity_kernel(vec4f *d_image, bool *d_imgmask, SplatScene d_scene) {
 
     unsigned int x = blockDim.x * blockIdx.x + threadIdx.x;
     unsigned int y = blockDim.y * blockIdx.y + threadIdx.y;
@@ -574,7 +454,7 @@ __global__ void gsplat_image_opacity_kernel(vec4f *d_image, bool *d_imgmask, Spl
     }
 }
 
-void gsplat_tile_paint(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo, vec4f *d_image) {
+void gsplat_tile_paint(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo, vec4f *d_image) {
     dim3 blockDim(16, 16);
     dim3 gridDim((blockDim.x + d_tileinfo.nums.x - 1) / blockDim.x, (blockDim.y + d_tileinfo.nums.y - 1) / blockDim.y,
                  1);
@@ -589,26 +469,26 @@ void gsplat_tile_paint(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTi
     cudaFree(d_imgmask);
 }
 
-SplatDataGPU gsplat_data_gpu_create(SplatData &h_splats) {
+SplatData gsplat_data_host_to_device(SplatData &h_splats) {
 
-    SplatDataGPU splats_gpu;
+    SplatData d_splats;
     int nsplats = h_splats.nsplats;
-    splats_gpu.nsplats = nsplats;
-    CUDATRACE("cudaMalloc pos3d", cudaMalloc(&splats_gpu.pos3d, nsplats * sizeof(vec4f)));
-    CUDATRACE("cudaMalloc scale", cudaMalloc(&splats_gpu.scale, nsplats * sizeof(vec4f)));
-    CUDATRACE("cudaMalloc rot", cudaMalloc(&splats_gpu.rot, nsplats * sizeof(vec4f)));
-    CUDATRACE("cudaMalloc opacity", cudaMalloc(&splats_gpu.opacity, nsplats * sizeof(float)));
-    CUDATRACE("cudaMalloc sh", cudaMalloc(&splats_gpu.sh, 48 * nsplats * sizeof(float)));
+    d_splats.nsplats = nsplats;
+    CUDATRACE("cudaMalloc pos3d", cudaMalloc(&d_splats.pos3d, nsplats * sizeof(vec4f)));
+    CUDATRACE("cudaMalloc scale", cudaMalloc(&d_splats.scale, nsplats * sizeof(vec4f)));
+    CUDATRACE("cudaMalloc rot", cudaMalloc(&d_splats.rot, nsplats * sizeof(vec4f)));
+    CUDATRACE("cudaMalloc opacity", cudaMalloc(&d_splats.opacity, nsplats * sizeof(float)));
+    CUDATRACE("cudaMalloc sh", cudaMalloc(&d_splats.sh, 48 * nsplats * sizeof(float)));
 
-    cudaMemcpy(splats_gpu.pos3d, h_splats.pos3d, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
-    cudaMemcpy(splats_gpu.scale, h_splats.scale, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
-    cudaMemcpy(splats_gpu.rot, h_splats.rot, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
-    cudaMemcpy(splats_gpu.opacity, h_splats.opacity, nsplats * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(splats_gpu.sh, h_splats.sh, 48 * nsplats * sizeof(float), cudaMemcpyHostToDevice);
-    return splats_gpu;
+    cudaMemcpy(d_splats.pos3d, h_splats.pos3d, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_splats.scale, h_splats.scale, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_splats.rot, h_splats.rot, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_splats.opacity, h_splats.opacity, nsplats * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_splats.sh, h_splats.sh, 48 * nsplats * sizeof(float), cudaMemcpyHostToDevice);
+    return d_splats;
 }
 
-void gsplat_data_gpu_free(SplatDataGPU &d_splats) {
+void gsplat_data_free_at_device(SplatData &d_splats) {
 
     cudaFree(d_splats.pos3d);
     cudaFree(d_splats.scale);
@@ -617,8 +497,8 @@ void gsplat_data_gpu_free(SplatDataGPU &d_splats) {
     cudaFree(d_splats.sh);
 }
 
-SplatData2DGPU gsplat_data_2d_gpu_create(int nsplats) {
-    SplatData2DGPU splats2d;
+SplatData2D gsplat_data2d_create_at_device(int nsplats) {
+    SplatData2D splats2d;
     splats2d.nsplats = nsplats;
     cudaMalloc(&splats2d.pos2d, nsplats * sizeof(vec2f));
     cudaMalloc(&splats2d.depth, nsplats * sizeof(float));
@@ -628,7 +508,7 @@ SplatData2DGPU gsplat_data_2d_gpu_create(int nsplats) {
     return splats2d;
 }
 
-void gsplat_data_2d_gpu_free(SplatData2DGPU &d_splats) {
+void gsplat_data2d_free_at_device(SplatData2D &d_splats) {
     cudaFree(d_splats.pos2d);
     cudaFree(d_splats.depth);
     cudaFree(d_splats.cov2d);
@@ -645,57 +525,35 @@ void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_imag
     cudaGetDevice(&device);
     cudaGetDeviceProperties(&prop, device);
 
-    SplatSceneGPU d_scene{mat4x4f(scene.viewmtx),
-                          mat4x4f(scene.projmtx),
-                          vec4f(scene.bgcolor),
-                          vec3f(scene.eye),
-                          scene.znear,
-                          scene.zfar,
-                          scene.fovy,
-                          scene.width,
-                          scene.height};
+    SplatData d_splats = gsplat_data_host_to_device(splats);
 
-    SplatDataGPU d_splats = gsplat_data_gpu_create(splats);
+    SplatData2D d_splats2d = gsplat_data2d_create_at_device(d_splats.nsplats);
 
-    int nsplats = d_splats.nsplats;
-
-    SplatData2DGPU d_splats2d = gsplat_data_2d_gpu_create(nsplats);
-
-    gsplat_compute_gpu(d_scene, d_splats, d_splats2d);
+    gsplat_compute_at_device(scene, d_splats, d_splats2d);
     CUDA_CHECK_LAST_ERROR();
 
-    SplatTileInfo d_tileinfo = gsplat_tile_info_create(d_scene, d_splats2d);
+    SplatTileInfo d_tileinfo = gsplat_tile_create_at_device(scene, d_splats2d);
 
-    // sort for each tile
-    gsplat_splat_sort(d_splats2d, d_tileinfo);
+    gsplat_data2d_sort_at_device(d_splats2d, d_tileinfo);
 
-    // image
-    size_t imageByteSize = scene.width * scene.height * sizeof(vec4f);
-    vec4f *d_image;
-    cudaMalloc(&d_image, imageByteSize);
+    SplatImage d_image;
+    SplatImage::createAtDevice(&d_image, scene.width, scene.height);
 
-    debug_print("scene bgcolor=(%f,%f,%f,%f)\n", d_scene.bgcolor.x, d_scene.bgcolor.y, d_scene.bgcolor.z,
-                d_scene.bgcolor.w);
+    debug_print("scene bgcolor=(%f,%f,%f,%f)\n", scene.bgcolor.x, scene.bgcolor.y, scene.bgcolor.z, scene.bgcolor.w);
 
-    image_set_color_gpu(d_image, d_scene);
+    splat_image_set_color_at_device(d_image, scene.bgcolor);
     CUDA_CHECK_LAST_ERROR();
 
-    gsplat_tile_paint2(d_scene, d_splats2d, d_tileinfo, d_image);
+    gsplat_image_render_at_device(scene, d_splats2d, d_tileinfo, d_image);
     // gsplat_tile_paint(d_scene, d_splats2d, d_tileinfo, d_image);
     CUDA_CHECK_LAST_ERROR();
 
-    // image output
-    float *h_image = (float *)malloc(imageByteSize);
-    if (h_image) {
-        cudaMemcpy(h_image, d_image, imageByteSize, cudaMemcpyDeviceToHost);
-    }
+    d_image.toHost(out_image);
 
-    gsplat_data_gpu_free(d_splats);
-    gsplat_data_2d_gpu_free(d_splats2d);
-    gsplat_tile_info_free(d_tileinfo);
-    cudaFree(d_image);
-
-    *out_image = h_image;
+    gsplat_data_free_at_device(d_splats);
+    gsplat_data2d_free_at_device(d_splats2d);
+    gsplat_tileinfo_free_at_device(d_tileinfo);
+    d_image.freeAtDevice();
 }
 
 } // namespace gsplat

@@ -1,191 +1,191 @@
-# import math
+import math
 
-# import numpy as np
-# from plyfile import PlyData
-# from pyglm import glm
+import numpy as np
+from plyfile import PlyData
+from pyglm import glm
 
-# from pygsplat import gsplat_rasterize, save_to_image
-
-
-# class SplatScene:
-#     bgcolor = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
-#     viewmtx = np.array(glm.mat4(1.0), dtype=np.float32)
-#     projmtx = np.array(glm.mat4(1.0), dtype=np.float32)
-#     eye = glm.vec3(1, 1, 1)
-#     center = glm.vec3(0, 0, 0)
-#     up = glm.vec3(0, 1, 0)
-#     near = 0.01
-#     far = 1000
-#     fovy = glm.pi() / 2.0
-#     width = 1024
-#     height = 768
-
-#     def update(self):
-#         _viewmtx = glm.lookAt(self.eye, self.center, self.up)
-#         self.viewmtx = np.array(_viewmtx, dtype=np.float32)
-#         _projmtx = glm.perspective(
-#             self.fovy, self.width * 1.0 / self.height, self.near, self.far
-#         )
-#         self.projmtx = np.array(_projmtx, dtype=np.float32)
+from pygsplat import gsplat_rasterize, save_to_image
 
 
-# class SplatsData:
-#     def __init__(self, pos3d, scale, rot, opacity, sh) -> None:
-#         self.pos3d = pos3d
-#         self.scale = scale
-#         self.rot = rot
-#         self.opacity = opacity
-#         self.sh = sh
+class SplatScene:
+    bgcolor = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    viewmtx = np.array(glm.mat4(1.0), dtype=np.float32)
+    projmtx = np.array(glm.mat4(1.0), dtype=np.float32)
+    eye = glm.vec3(1, 1, 1)
+    center = glm.vec3(0, 0, 0)
+    up = glm.vec3(0, 1, 0)
+    near = 0.01
+    far = 1000
+    fovy = glm.pi() / 2.0
+    width = 1024
+    height = 768
 
-#     @staticmethod
-#     def from_ply(path):
-#         vertex = PlyData.read(path)["vertex"]
-#         nsplats = len(vertex["x"])
-
-#         # 3 position + 1 opacity -> GLSL vec4 posopa
-#         position = np.stack(
-#             [
-#                 vertex["x"],
-#                 vertex["y"],
-#                 vertex["z"],
-#                 np.ones((nsplats,), dtype=np.float32),
-#             ],
-#             axis=1,
-#         ).astype(np.float32)
-#         opacity = np.asarray(vertex["opacity"], dtype=np.float32).reshape(nsplats, 1)
-
-#         splat_scale = np.stack(
-#             [
-#                 vertex["scale_0"],
-#                 vertex["scale_1"],
-#                 vertex["scale_2"],
-#                 np.zeros((nsplats,), dtype=np.float32),
-#             ],
-#             axis=1,
-#         ).astype(np.float32)
-
-#         # PLY 中 rotation 为 (w, x, y, z)，与 shader 当前读取方式一致
-#         splat_rot = np.stack([vertex[f"rot_{i}"] for i in range(4)], axis=1).astype(
-#             np.float32
-#         )
-
-#         # DC 是第 0 个 SH 系数，形状为 (N, 1, 3)
-#         sh_dc = np.stack([vertex[f"f_dc_{i}"] for i in range(3)], axis=1).astype(
-#             np.float32
-#         )[:, None, :]
-
-#         # f_rest 按 RGB 通道分别保存：先恢复 (N, 3, 15)，再转为 (N, 15, 3)
-#         sh_rest = np.stack([vertex[f"f_rest_{i}"] for i in range(45)], axis=1).astype(
-#             np.float32
-#         )
-#         sh_rest = sh_rest.reshape(nsplats, 3, 15).transpose(0, 2, 1)
-
-#         # GLSL 是 vec4 shcolor[16]：RGB 后补一个 float，保证每个系数占 16 bytes
-#         sh_rgb = np.concatenate([sh_dc, sh_rest], axis=1)
-#         sh_vec4 = np.zeros((nsplats, 16, 4), dtype=np.float32)
-#         sh_vec4[:, :, :3] = sh_rgb
-#         sh_vec4 = sh_vec4.reshape(nsplats, 64)
-
-#         pos3d = np.ascontiguousarray(position, dtype=np.float32)
-#         scale = np.ascontiguousarray(splat_scale, dtype=np.float32)
-#         rot = np.ascontiguousarray(splat_rot, dtype=np.float32)
-#         opacity = np.ascontiguousarray(opacity, dtype=np.float32)
-#         sh = np.ascontiguousarray(sh_rgb.reshape(nsplats, 48), dtype=np.float32)
-#         data = SplatsData(pos3d, scale, rot, opacity, sh)
-
-#         return data
+    def update(self):
+        _viewmtx = glm.lookAt(self.eye, self.center, self.up)
+        self.viewmtx = np.array(_viewmtx, dtype=np.float32)
+        _projmtx = glm.perspective(
+            self.fovy, self.width * 1.0 / self.height, self.near, self.far
+        )
+        self.projmtx = np.array(_projmtx, dtype=np.float32)
 
 
-# class SplatRenderer:
-#     def __init__(self, width, height) -> None:
-#         self.scene = SplatScene()
-#         self.scene.near = 0.01
-#         self.scene.far = 1000
-#         self.scene.fovy = glm.pi() / 2.0
-#         self.scene.width = width
-#         self.scene.height = height
-#         self.orbit_x = math.radians(-90.0)
-#         self.orbit_y = math.radians(0)
-#         self.orbit_r = 2
-#         self.update_scene()
+class SplatsData:
+    def __init__(self, pos3d, scale, rot, opacity, sh) -> None:
+        self.pos3d = pos3d
+        self.scale = scale
+        self.rot = rot
+        self.opacity = opacity
+        self.sh = sh
 
-#     def read_shader(self, path):
-#         source = ""
-#         with open(path, "r", encoding="utf-8") as f:
-#             source = f.read()
-#         return source
+    @staticmethod
+    def from_ply(path):
+        vertex = PlyData.read(path)["vertex"]
+        nsplats = len(vertex["x"])
 
-#     def set_orbit_x(self, rad):
-#         self.orbit_x = rad
-#         self.update_scene()
+        # 3 position + 1 opacity -> GLSL vec4 posopa
+        position = np.stack(
+            [
+                vertex["x"],
+                vertex["y"],
+                vertex["z"],
+                np.ones((nsplats,), dtype=np.float32),
+            ],
+            axis=1,
+        ).astype(np.float32)
+        opacity = np.asarray(vertex["opacity"], dtype=np.float32).reshape(nsplats, 1)
 
-#     def set_orbit_y(self, rad):
-#         self.orbit_y = rad
-#         self.update_scene()
+        splat_scale = np.stack(
+            [
+                vertex["scale_0"],
+                vertex["scale_1"],
+                vertex["scale_2"],
+                np.zeros((nsplats,), dtype=np.float32),
+            ],
+            axis=1,
+        ).astype(np.float32)
 
-#     def set_orbit_r(self, radius):
-#         self.orbit_r = radius
-#         self.update_scene()
+        # PLY 中 rotation 为 (w, x, y, z)，与 shader 当前读取方式一致
+        splat_rot = np.stack([vertex[f"rot_{i}"] for i in range(4)], axis=1).astype(
+            np.float32
+        )
 
-#     def set_center(self, center):
-#         self.scene.center = glm.vec3(*center)
-#         self.update_scene()
+        # DC 是第 0 个 SH 系数，形状为 (N, 1, 3)
+        sh_dc = np.stack([vertex[f"f_dc_{i}"] for i in range(3)], axis=1).astype(
+            np.float32
+        )[:, None, :]
 
-#     def update_scene(self):
-#         x = self.orbit_r * glm.cos(self.orbit_y) * glm.cos(self.orbit_x)
-#         y = self.orbit_r * glm.cos(self.orbit_y) * glm.sin(self.orbit_x)
-#         z = self.orbit_r * glm.sin(self.orbit_y)
-#         self.scene.eye = glm.vec3(x, y, z)
-#         self.scene.up = glm.vec3(0, 0, 1)
-#         self.scene.update()
+        # f_rest 按 RGB 通道分别保存：先恢复 (N, 3, 15)，再转为 (N, 15, 3)
+        sh_rest = np.stack([vertex[f"f_rest_{i}"] for i in range(45)], axis=1).astype(
+            np.float32
+        )
+        sh_rest = sh_rest.reshape(nsplats, 3, 15).transpose(0, 2, 1)
 
-#     def setSplatData(self, splats):
-#         self.data = splats
+        # GLSL 是 vec4 shcolor[16]：RGB 后补一个 float，保证每个系数占 16 bytes
+        sh_rgb = np.concatenate([sh_dc, sh_rest], axis=1)
+        sh_vec4 = np.zeros((nsplats, 16, 4), dtype=np.float32)
+        sh_vec4[:, :, :3] = sh_rgb
+        sh_vec4 = sh_vec4.reshape(nsplats, 64)
 
-#     def render(self):
+        pos3d = np.ascontiguousarray(position, dtype=np.float32)
+        scale = np.ascontiguousarray(splat_scale, dtype=np.float32)
+        rot = np.ascontiguousarray(splat_rot, dtype=np.float32)
+        opacity = np.ascontiguousarray(opacity, dtype=np.float32)
+        sh = np.ascontiguousarray(sh_rgb.reshape(nsplats, 48), dtype=np.float32)
+        data = SplatsData(pos3d, scale, rot, opacity, sh)
 
-#         image = gsplat_rasterize(
-#             self.scene,
-#             self.data.pos3d,
-#             self.data.scale,
-#             self.data.rot,
-#             self.data.opacity,
-#             self.data.sh,
-#         )
-#         return image
-
-#     def render_to_image(self, image_path: str, flipY=False):
-#         image = self.render()
-#         save_to_image(image, image_path, 255, flipY)
+        return data
 
 
-# if __name__ == "__main__":
-#     import json
-#     import os
+class SplatRenderer:
+    def __init__(self, width, height) -> None:
+        self.scene = SplatScene()
+        self.scene.near = 0.01
+        self.scene.far = 1000
+        self.scene.fovy = glm.pi() / 2.0
+        self.scene.width = width
+        self.scene.height = height
+        self.orbit_x = math.radians(-90.0)
+        self.orbit_y = math.radians(0)
+        self.orbit_r = 2
+        self.update_scene()
 
-#     width = 500
-#     height = 500
+    def read_shader(self, path):
+        source = ""
+        with open(path, "r", encoding="utf-8") as f:
+            source = f.read()
+        return source
 
-#     script_dir = os.path.dirname(os.path.abspath(__file__))
-#     dataName = "Hummel_figurine_Little_Violinist.ply"
-#     # dataName = "cactus_splat3.ply"
-#     dataInfoPath = os.path.join(script_dir, r"../data/datainfo.json")
-#     with open(dataInfoPath, "r", encoding="utf-8") as f:
-#         dataInfos = json.load(f)
-#     dataInfo = dataInfos[dataName]
-#     dataPath = os.path.join(script_dir, f"../data/{dataName}")
+    def set_orbit_x(self, rad):
+        self.orbit_x = rad
+        self.update_scene()
 
-#     data = SplatsData.from_ply(dataPath)
-#     orbit = dataInfo["orbit"]
-#     radius = dataInfo["radius"]
-#     center = dataInfo["center"]
+    def set_orbit_y(self, rad):
+        self.orbit_y = rad
+        self.update_scene()
 
-#     renderer = SplatRenderer(width, height)
-#     renderer.set_orbit_x(math.radians(orbit[0]))
-#     renderer.set_orbit_y(math.radians(orbit[1]))
-#     renderer.set_orbit_r(radius)
-#     renderer.set_center(center)
-#     renderer.setSplatData(data)
+    def set_orbit_r(self, radius):
+        self.orbit_r = radius
+        self.update_scene()
 
-#     outputImageName = os.path.join(script_dir, "../output/cugsplat.png")
-#     renderer.render_to_image(outputImageName, True)
+    def set_center(self, center):
+        self.scene.center = glm.vec3(*center)
+        self.update_scene()
+
+    def update_scene(self):
+        x = self.orbit_r * glm.cos(self.orbit_y) * glm.cos(self.orbit_x)
+        y = self.orbit_r * glm.cos(self.orbit_y) * glm.sin(self.orbit_x)
+        z = self.orbit_r * glm.sin(self.orbit_y)
+        self.scene.eye = glm.vec3(x, y, z)
+        self.scene.up = glm.vec3(0, 0, 1)
+        self.scene.update()
+
+    def setSplatData(self, splats):
+        self.data = splats
+
+    def render(self):
+
+        image = gsplat_rasterize(
+            self.scene,
+            self.data.pos3d,
+            self.data.scale,
+            self.data.rot,
+            self.data.opacity,
+            self.data.sh,
+        )
+        return image
+
+    def render_to_image(self, image_path: str, flipY=False):
+        image = self.render()
+        save_to_image(image, image_path, 255, flipY)
+
+
+if __name__ == "__main__":
+    import json
+    import os
+
+    width = 500
+    height = 500
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    dataName = "Hummel_figurine_Little_Violinist.ply"
+    # dataName = "cactus_splat3.ply"
+    dataInfoPath = os.path.join(script_dir, r"../data/datainfo.json")
+    with open(dataInfoPath, "r", encoding="utf-8") as f:
+        dataInfos = json.load(f)
+    dataInfo = dataInfos[dataName]
+    dataPath = os.path.join(script_dir, f"../data/{dataName}")
+
+    data = SplatsData.from_ply(dataPath)
+    orbit = dataInfo["orbit"]
+    radius = dataInfo["radius"]
+    center = dataInfo["center"]
+
+    renderer = SplatRenderer(width, height)
+    renderer.set_orbit_x(math.radians(orbit[0]))
+    renderer.set_orbit_y(math.radians(orbit[1]))
+    renderer.set_orbit_r(radius)
+    renderer.set_center(center)
+    renderer.setSplatData(data)
+
+    outputImageName = os.path.join(script_dir, "../output/cugsplat.png")
+    renderer.render_to_image(outputImageName, True)

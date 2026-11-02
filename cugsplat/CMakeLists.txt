@@ -1,6 +1,7 @@
 add_library(cugsplat SHARED
     cuda_utils.cu
     gsplat_rasterizer.cu
+    gsplat_math.cu
     gsplat_tile.cu
 )
 
@@ -24,7 +25,7 @@ target_compile_options(cugsplat PRIVATE
 
 set_target_properties(cugsplat PROPERTIES
     POSITION_INDEPENDENT_CODE ON
-    # gsplat_tile.cu 会调用 gsplat_rasterizer.cu 里定义的 compute_weight，
+    # gsplat_tile.cu / gsplat_rasterizer.cu 会调用 gsplat_math.cu 里定义的 compute_weight，
     # 设备端跨 TU 调用需要 relocatable device code + device link。
     CUDA_SEPARABLE_COMPILATION ON
     CUDA_RESOLVE_DEVICE_SYMBOLS ON

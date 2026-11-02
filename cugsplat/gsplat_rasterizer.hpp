@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gsplat.hpp"
-#include "matrix_gpu.hpp"
+#include "gsplat_matrix.cuh"
 
 // cugsplat 动态库导出宏：库内部编译时定义 CUGSPLAT_EXPORTS，
 // 使用方（pygsplat 的 Python 扩展）拿到的是 dllimport。
@@ -15,25 +15,23 @@
 #define CUGSPLAT_API __attribute__((visibility("default")))
 #endif
 
-using namespace gsplat::matrix::gpu;
-
 namespace gsplat {
 
 void showCompileTile();
 
-struct SplatScene {
-    float *viewmtx;
-    float *projmtx;
-    float *eye;
-    float *bgcolor;
-    float znear;
-    float zfar;
-    float fovy;
-    int width;
-    int height;
-};
+// struct SplatScene {
+//     float *viewmtx;
+//     float *projmtx;
+//     float *eye;
+//     float *bgcolor;
+//     float znear;
+//     float zfar;
+//     float fovy;
+//     int width;
+//     int height;
+// };
 
-struct SplatSceneGPU {
+struct SplatScene {
     mat4x4f viewmtx;
     mat4x4f projmtx;
     vec4f bgcolor;
@@ -45,16 +43,16 @@ struct SplatSceneGPU {
     int height;
 };
 
-struct SplatData {
-    int nsplats;
-    float *pos3d;
-    float *scale;
-    float *rot;
-    float *opacity;
-    float *sh;
-};
+// struct SplatData {
+//     int nsplats;
+//     float *pos3d;
+//     float *scale;
+//     float *rot;
+//     float *opacity;
+//     float *sh;
+// };
 
-struct SplatDataGPU {
+struct SplatData {
     int nsplats;
     vec4f *pos3d;
     vec4f *scale;
@@ -63,7 +61,7 @@ struct SplatDataGPU {
     float *sh;
 };
 
-struct SplatData2DGPU {
+struct SplatData2D {
     int nsplats;
     vec2f *pos2d;
     float *depth;
@@ -81,10 +79,47 @@ template <typename T> struct Box2D {
     Range<T> y;
 };
 
-// 定义在 gsplat_rasterizer.cu；跨 TU 的设备端调用依靠 cugsplat 的 RDC
-// (CUDA_SEPARABLE_COMPILATION) 解析。这里不能加 __forceinline__：
-// 只有声明没有函数体时会被当成 extern inline，符号不会被产出。
-__host__ __device__ float compute_weight(vec2f d, mat2x2f Cov2D);
+struct SplatImage {
+    int width;
+    int height;
+    vec4f *image;
+
+    static cudaError_t createAtDevice(SplatImage *d_image, int width, int height) {
+        size_t imageByteSize = width * height * sizeof(vec4f);
+        d_image->width = width;
+        d_image->height = height;
+        cudaError_t err = cudaMalloc(&(d_image->image), imageByteSize);
+        return err;
+    }
+
+    cudaError_t toHost(SplatImage *h_image) {
+        cudaError_t err = cudaSuccess;
+        size_t imageByteSize = width * height * sizeof(vec4f);
+        h_image->width = width;
+        h_image->height = height;
+        h_image->image = (vec4f *)malloc(imageByteSize);
+        if (h_image->image) {
+            err = cudaMemcpy(h_image->image, image, imageByteSize, cudaMemcpyDeviceToHost);
+        } else {
+            err = cudaErrorMemoryAllocation;
+        }
+        return err;
+    }
+
+    cudaError_t toHost(float **h_image) {
+        cudaError_t err = cudaSuccess;
+        size_t imageByteSize = width * height * sizeof(vec4f);
+        *h_image = (float *)malloc(imageByteSize);
+        if (*h_image) {
+            err = cudaMemcpy(*h_image, image, imageByteSize, cudaMemcpyDeviceToHost);
+        } else {
+            err = cudaErrorMemoryAllocation;
+        }
+        return err;
+    }
+
+    cudaError_t freeAtDevice() { return cudaFree(image); }
+};
 
 CUGSPLAT_API void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **image,
                                        DebugPrintFn debug_print = nullptr);

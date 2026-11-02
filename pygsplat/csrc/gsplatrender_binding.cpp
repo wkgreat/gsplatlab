@@ -172,9 +172,9 @@ static PyObject *gsplat_rasterize(PyObject *self, PyObject *args) {
 
     gsplat::SplatData splats;
     splats.nsplats = nsplats;
-    splats.pos3d = static_cast<float *>(PyArray_DATA(pos3d_arr));
-    splats.scale = static_cast<float *>(PyArray_DATA(scale_arr));
-    splats.rot = static_cast<float *>(PyArray_DATA(rot_arr));
+    splats.pos3d = static_cast<gsplat::vec4f *>(PyArray_DATA(pos3d_arr));
+    splats.scale = static_cast<gsplat::vec4f *>(PyArray_DATA(scale_arr));
+    splats.rot = static_cast<gsplat::vec4f *>(PyArray_DATA(rot_arr));
     splats.opacity = static_cast<float *>(PyArray_DATA(opacity_arr));
     splats.sh = static_cast<float *>(PyArray_DATA(sh_arr));
 
@@ -292,14 +292,14 @@ static PyObject *gsplat_compute_debug(PyObject *self, PyObject *args) {
 
     gsplat::SplatData splats;
     splats.nsplats = nsplats;
-    splats.pos3d = static_cast<float *>(PyArray_DATA(pos3d_arr));
-    splats.scale = static_cast<float *>(PyArray_DATA(scale_arr));
-    splats.rot = static_cast<float *>(PyArray_DATA(rot_arr));
+    splats.pos3d = static_cast<gsplat::vec4f *>(PyArray_DATA(pos3d_arr));
+    splats.scale = static_cast<gsplat::vec4f *>(PyArray_DATA(scale_arr));
+    splats.rot = static_cast<gsplat::vec4f *>(PyArray_DATA(rot_arr));
     splats.opacity = static_cast<float *>(PyArray_DATA(opacity_arr));
     splats.sh = static_cast<float *>(PyArray_DATA(sh_arr));
 
     // --- call debug compute
-    gsplat::SplatData2DGPU splats2d_host;
+    gsplat::SplatData2D splats2d_host;
 
     // --- return as tuple of numpy arrays
     npy_intp dims2[2] = {nsplats, 2};
