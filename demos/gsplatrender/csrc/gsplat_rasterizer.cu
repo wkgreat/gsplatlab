@@ -835,7 +835,7 @@ void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_imag
     SplatData2DGPU d_splats2d = gsplat_data_2d_gpu_create(nsplats);
 
     gsplat_compute_gpu(d_scene, d_splats, d_splats2d);
-    CUDA_CHECK_LAST_ERROR();
+    // CUDA_CHECK_LAST_ERROR();
 
     SplatTileInfo d_tileinfo = gsplat_tile_info_create(d_scene, d_splats2d);
 
@@ -851,11 +851,11 @@ void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_imag
                 d_scene.bgcolor.w);
 
     image_set_color_gpu(d_image, d_scene);
-    CUDA_CHECK_LAST_ERROR();
+    // CUDA_CHECK_LAST_ERROR();
 
     gsplat_tile_paint(d_scene, d_splats2d, d_tileinfo, d_image);
     // gsplat_tile_paint2(d_scene, d_splats2d, d_tileinfo, d_image);
-    CUDA_CHECK_LAST_ERROR();
+    // CUDA_CHECK_LAST_ERROR();
 
     // image output
     float *h_image = (float *)malloc(imageByteSize);

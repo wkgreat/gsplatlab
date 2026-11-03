@@ -31,10 +31,12 @@ __global__ void image_set_color_kernel(SplatImage d_image, vec4f color) {
     }
 }
 
-void splat_image_set_color_at_device(SplatImage d_image, vec4f color) {
+cudaError_t splat_image_set_color_at_device(SplatImage d_image, vec4f color) {
     dim3 blockDim(16, 16, 1);
     dim3 gridDim((blockDim.x + d_image.width - 1) / blockDim.x, (blockDim.y + d_image.height - 1) / blockDim.y, 1);
     image_set_color_kernel<<<gridDim, blockDim, 0>>>(d_image, color);
+    CUDA_CHECK_LAST_ERROR();
+    return cudaSuccess;
 }
 
 __global__ void gsplat_compute_kernel(SplatScene d_scene, SplatData d_splats, SplatData2D d_splats2d) {
@@ -80,10 +82,12 @@ __global__ void gsplat_compute_kernel(SplatScene d_scene, SplatData d_splats, Sp
     d_splats2d.color[id] = color4;
 }
 
-void gsplat_compute_at_device(SplatScene d_scene, SplatData d_splats, SplatData2D d_splats2d) {
+cudaError_t gsplat_compute_at_device(SplatScene d_scene, SplatData d_splats, SplatData2D d_splats2d) {
     int blockDim = 128;
     int gridDim = (blockDim + d_splats.nsplats - 1) / blockDim;
     gsplat_compute_kernel<<<gridDim, blockDim>>>(d_scene, d_splats, d_splats2d);
+    CUDA_CHECK_LAST_ERROR();
+    return cudaSuccess;
 }
 
 __device__ bool point_in_box(vec2f v, vec4f box) {
@@ -166,7 +170,10 @@ __global__ void gsplat_tile_splat_count_kernel(SplatScene d_scene, SplatData2D d
     if (id >= d_splats2d.nsplats) {
         return;
     }
-
+    float depth = d_splats2d.depth[id];
+    if (depth <= 0) {
+        return;
+    }
     vec4f rect = d_splats2d.rect[id];
     Box2D<int> splatBox{(int)floor(rect.x), (int)ceil(rect.z), (int)floor(rect.y), (int)ceil(rect.w)};
     Box2D<int> tileBox;
@@ -187,7 +194,10 @@ __global__ void gsplat_tile_splat_index_kernel(SplatScene d_scene, SplatData2D d
     if (id >= d_splats2d.nsplats) {
         return;
     }
-
+    float depth = d_splats2d.depth[id];
+    if (depth <= 0) {
+        return;
+    }
     vec4f rect = d_splats2d.rect[id];
     Box2D<int> splatBox{(int)floor(rect.x), (int)ceil(rect.z), (int)floor(rect.y), (int)ceil(rect.w)};
     Box2D<int> tileBox;
@@ -197,7 +207,8 @@ __global__ void gsplat_tile_splat_index_kernel(SplatScene d_scene, SplatData2D d
             tileBox = gsplat_tile_box(d_scene, d_tileinfo, tileX, tileY);
             if (box_overlap(splatBox, tileBox)) {
                 int k = atomicAdd(&tileK[tileId], 1);
-                if (d_tileinfo.index.offset[tileId] + k < d_tileinfo.index.nEntries) {
+                if (k < d_tileinfo.index.stride[tileId] &&
+                    d_tileinfo.index.offset[tileId] + k < d_tileinfo.index.nEntries) {
                     d_tileinfo.index.entries[d_tileinfo.index.offset[tileId] + k] = id;
                 }
             }
@@ -205,34 +216,34 @@ __global__ void gsplat_tile_splat_index_kernel(SplatScene d_scene, SplatData2D d
     }
 }
 
-SplatTileInfo gsplat_tile_create_at_device(SplatScene d_scene, SplatData2D d_splats2d) {
+cudaError_t gsplat_tile_create_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo &d_tileinfo) {
 
-    SplatTileInfo tileinfo;
-    tileinfo.size.x = 64;
-    tileinfo.size.y = 64;
-    tileinfo.nums.x = (tileinfo.size.x + d_scene.width - 1) / tileinfo.size.x;
-    tileinfo.nums.y = (tileinfo.size.y + d_scene.height - 1) / tileinfo.size.y;
-    int totTileCnt = tileinfo.nums.x * tileinfo.nums.y;
+    d_tileinfo.size.x = 64;
+    d_tileinfo.size.y = 64;
+    d_tileinfo.nums.x = (d_tileinfo.size.x + d_scene.width - 1) / d_tileinfo.size.x;
+    d_tileinfo.nums.y = (d_tileinfo.size.y + d_scene.height - 1) / d_tileinfo.size.y;
+    int totTileCnt = d_tileinfo.nums.x * d_tileinfo.nums.y;
 
     int splatBlockDim = 256;
     int splatGridDim = (splatBlockDim + d_splats2d.nsplats - 1) / splatBlockDim;
 
-    cudaMalloc(&tileinfo.index.stride, totTileCnt * sizeof(int));
-    cudaMemset(tileinfo.index.stride, 0, totTileCnt * sizeof(int));
+    CUDA_CHECK(cudaMalloc(&d_tileinfo.index.stride, totTileCnt * sizeof(int)));
+    CUDA_CHECK(cudaMemset(d_tileinfo.index.stride, 0, totTileCnt * sizeof(int)));
 
-    gsplat_tile_splat_count_kernel<<<splatGridDim, splatBlockDim>>>(d_scene, d_splats2d, tileinfo);
+    gsplat_tile_splat_count_kernel<<<splatGridDim, splatBlockDim>>>(d_scene, d_splats2d, d_tileinfo);
+    CUDA_CHECK_LAST_ERROR();
 
     // TODO compute nEntries and offset in gpu
     int *idxcnt_cpu = (int *)std::malloc(totTileCnt * sizeof(int));
     int *idxoff_cpu = (int *)std::malloc(totTileCnt * sizeof(int));
     memset(idxoff_cpu, 0, totTileCnt * sizeof(int));
-    cudaMemcpy(idxcnt_cpu, tileinfo.index.stride, totTileCnt * sizeof(int), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(idxcnt_cpu, d_tileinfo.index.stride, totTileCnt * sizeof(int), cudaMemcpyDeviceToHost));
 
     int nEntries = 0;
     // 计算tile-splat索引里面，每个tile的指针偏移
-    for (int x = 0; x < tileinfo.nums.x; ++x) {
-        for (int y = 0; y < tileinfo.nums.y; ++y) {
-            int k = y * tileinfo.nums.x + x;
+    for (int x = 0; x < d_tileinfo.nums.x; ++x) {
+        for (int y = 0; y < d_tileinfo.nums.y; ++y) {
+            int k = y * d_tileinfo.nums.x + x;
             nEntries += idxcnt_cpu[k];
         }
     }
@@ -241,30 +252,32 @@ SplatTileInfo gsplat_tile_create_at_device(SplatScene d_scene, SplatData2D d_spl
         idxoff_cpu[k] = cumsum;
         cumsum += idxcnt_cpu[k];
     }
-    tileinfo.index.nEntries = nEntries;
+    d_tileinfo.index.nEntries = nEntries;
 
-    cudaMalloc(&tileinfo.index.offset, totTileCnt * sizeof(int));
-    cudaMemcpy(tileinfo.index.offset, idxoff_cpu, totTileCnt * sizeof(int), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMalloc(&d_tileinfo.index.offset, totTileCnt * sizeof(int)));
+    CUDA_CHECK(cudaMemcpy(d_tileinfo.index.offset, idxoff_cpu, totTileCnt * sizeof(int), cudaMemcpyHostToDevice));
 
-    cudaMalloc(&tileinfo.index.entries, nEntries * sizeof(int));
+    CUDA_CHECK(cudaMalloc(&d_tileinfo.index.entries, nEntries * sizeof(int)));
 
     int *tileK;
-    cudaMalloc(&tileK, totTileCnt * sizeof(int));
-    cudaMemset(tileK, 0, totTileCnt * sizeof(int));
+    CUDA_CHECK(cudaMalloc(&tileK, totTileCnt * sizeof(int)));
+    CUDA_CHECK(cudaMemset(tileK, 0, totTileCnt * sizeof(int)));
 
-    gsplat_tile_splat_index_kernel<<<splatGridDim, splatBlockDim>>>(d_scene, d_splats2d, tileinfo, tileK);
+    gsplat_tile_splat_index_kernel<<<splatGridDim, splatBlockDim>>>(d_scene, d_splats2d, d_tileinfo, tileK);
+    CUDA_CHECK_LAST_ERROR();
 
     free(idxcnt_cpu);
     free(idxoff_cpu);
-    cudaFree(tileK);
+    CUDA_CHECK(cudaFree(tileK));
 
-    return tileinfo;
+    return cudaSuccess;
 }
 
-void gsplat_tileinfo_free_at_device(SplatTileInfo d_tileinfo) {
-    cudaFree(d_tileinfo.index.offset);
-    cudaFree(d_tileinfo.index.stride);
-    cudaFree(d_tileinfo.index.entries);
+cudaError_t gsplat_tileinfo_free_at_device(SplatTileInfo d_tileinfo) {
+    CUDA_CHECK(cudaFree(d_tileinfo.index.offset));
+    CUDA_CHECK(cudaFree(d_tileinfo.index.stride));
+    CUDA_CHECK(cudaFree(d_tileinfo.index.entries));
+    return cudaSuccess;
 }
 
 __host__ __device__ static size_t bitCeil(size_t n) {
@@ -315,12 +328,13 @@ __global__ void gsplat_tile_bitonic_sort(SplatData2D splat2d, int *d_entries, in
     }
 }
 
-void gsplat_tile_splat_sort(SplatData2D splats2d, SplatTileInfo h_tileinfo, SplatTileInfo d_tileinfo, int tileId,
-                            int *d_cache) {
+cudaError_t gsplat_tile_splat_sort_at_device(SplatData2D splats2d, SplatTileInfo h_tileinfo, SplatTileInfo d_tileinfo,
+                                             int tileId, int *d_cache) {
 
     int n = h_tileinfo.index.stride[tileId];
-    if (n < 2)
-        return;
+    if (n < 2) {
+        return cudaSuccess;
+    }
 
     int m = bitCeil(n);
 
@@ -330,18 +344,21 @@ void gsplat_tile_splat_sort(SplatData2D splats2d, SplatTileInfo h_tileinfo, Spla
     int s = h_tileinfo.index.offset[tileId];
 
     fillInt32Kernel<<<blockNum, blockDim>>>(d_cache, -1, m);
-    cudaMemcpy(d_cache, d_tileinfo.index.entries + s, sizeof(int) * n, cudaMemcpyDeviceToDevice);
+    CUDA_CHECK(cudaMemcpy(d_cache, d_tileinfo.index.entries + s, sizeof(int) * n, cudaMemcpyDeviceToDevice));
 
     for (int k = 2; k <= m; k <<= 1) {
         for (int j = k / 2; j > 0; j >>= 1) {
             gsplat_tile_bitonic_sort<<<blockNum, blockDim>>>(splats2d, d_cache, m, k, j, true);
+            CUDA_CHECK_LAST_ERROR();
         }
     }
 
-    cudaMemcpy(d_tileinfo.index.entries + s, d_cache, sizeof(int) * n, cudaMemcpyDeviceToDevice);
+    CUDA_CHECK(cudaMemcpy(d_tileinfo.index.entries + s, d_cache, sizeof(int) * n, cudaMemcpyDeviceToDevice));
+
+    return cudaSuccess;
 }
 
-void gsplat_data2d_sort_at_device(SplatData2D splats2d, SplatTileInfo d_tileinfo) {
+cudaError_t gsplat_data2d_sort_at_device(SplatData2D splats2d, SplatTileInfo d_tileinfo) {
 
     SplatTileInfo h_tileinfo = splat_tileinfo_to_host(d_tileinfo);
 
@@ -349,16 +366,18 @@ void gsplat_data2d_sort_at_device(SplatData2D splats2d, SplatTileInfo d_tileinfo
     size_t m = bitCeil(maxTileSplatCount);
 
     int *d_cache;
-    cudaMalloc(&d_cache, m * sizeof(int));
+    CUDA_CHECK(cudaMalloc(&d_cache, m * sizeof(int)));
 
     for (int tileId = 0; tileId < h_tileinfo.nums.x * h_tileinfo.nums.y; ++tileId) {
-        gsplat_tile_splat_sort(splats2d, h_tileinfo, d_tileinfo, tileId, d_cache);
+        CUDA_CHECK(gsplat_tile_splat_sort_at_device(splats2d, h_tileinfo, d_tileinfo, tileId, d_cache));
     }
 
-    cudaFree(d_cache);
+    CUDA_CHECK(cudaFree(d_cache));
     free(h_tileinfo.index.offset);
     free(h_tileinfo.index.stride);
     free(h_tileinfo.index.entries);
+
+    return cudaSuccess;
 }
 
 __global__ void gsplat_rasterize_kernel(SplatScene scene, SplatData2D splats2d, float *out_image) {
@@ -469,54 +488,79 @@ void gsplat_tile_paint(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo
     cudaFree(d_imgmask);
 }
 
-SplatData gsplat_data_host_to_device(SplatData &h_splats) {
+cudaError_t gsplat_data_host_to_device(SplatData &h_splats, SplatData &d_splats) {
 
-    SplatData d_splats;
     int nsplats = h_splats.nsplats;
     d_splats.nsplats = nsplats;
-    CUDATRACE("cudaMalloc pos3d", cudaMalloc(&d_splats.pos3d, nsplats * sizeof(vec4f)));
-    CUDATRACE("cudaMalloc scale", cudaMalloc(&d_splats.scale, nsplats * sizeof(vec4f)));
-    CUDATRACE("cudaMalloc rot", cudaMalloc(&d_splats.rot, nsplats * sizeof(vec4f)));
-    CUDATRACE("cudaMalloc opacity", cudaMalloc(&d_splats.opacity, nsplats * sizeof(float)));
-    CUDATRACE("cudaMalloc sh", cudaMalloc(&d_splats.sh, 48 * nsplats * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_splats.pos3d, nsplats * sizeof(vec4f)));
+    CUDA_CHECK(cudaMalloc(&d_splats.scale, nsplats * sizeof(vec4f)));
+    CUDA_CHECK(cudaMalloc(&d_splats.rot, nsplats * sizeof(vec4f)));
+    CUDA_CHECK(cudaMalloc(&d_splats.opacity, nsplats * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_splats.sh, 48 * nsplats * sizeof(float)));
 
-    cudaMemcpy(d_splats.pos3d, h_splats.pos3d, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_splats.scale, h_splats.scale, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_splats.rot, h_splats.rot, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_splats.opacity, h_splats.opacity, nsplats * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_splats.sh, h_splats.sh, 48 * nsplats * sizeof(float), cudaMemcpyHostToDevice);
-    return d_splats;
+    CUDA_CHECK(cudaMemcpy(d_splats.pos3d, h_splats.pos3d, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_splats.scale, h_splats.scale, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_splats.rot, h_splats.rot, nsplats * sizeof(vec4f), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_splats.opacity, h_splats.opacity, nsplats * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_splats.sh, h_splats.sh, 48 * nsplats * sizeof(float), cudaMemcpyHostToDevice));
+    return cudaSuccess;
 }
 
-void gsplat_data_free_at_device(SplatData &d_splats) {
+cudaError_t gsplat_data_free_at_device(SplatData &d_splats) {
 
-    cudaFree(d_splats.pos3d);
-    cudaFree(d_splats.scale);
-    cudaFree(d_splats.rot);
-    cudaFree(d_splats.opacity);
-    cudaFree(d_splats.sh);
+    CUDA_CHECK(cudaFree(d_splats.pos3d));
+    CUDA_CHECK(cudaFree(d_splats.scale));
+    CUDA_CHECK(cudaFree(d_splats.rot));
+    CUDA_CHECK(cudaFree(d_splats.opacity));
+    CUDA_CHECK(cudaFree(d_splats.sh));
+    return cudaSuccess;
 }
 
-SplatData2D gsplat_data2d_create_at_device(int nsplats) {
-    SplatData2D splats2d;
-    splats2d.nsplats = nsplats;
-    cudaMalloc(&splats2d.pos2d, nsplats * sizeof(vec2f));
-    cudaMalloc(&splats2d.depth, nsplats * sizeof(float));
-    cudaMalloc(&splats2d.cov2d, nsplats * sizeof(mat2x2f));
-    cudaMalloc(&splats2d.rect, nsplats * sizeof(vec4f));
-    cudaMalloc(&splats2d.color, nsplats * sizeof(vec4f));
-    return splats2d;
+cudaError_t gsplat_data2d_create_at_device(int nsplats, SplatData2D &d_splat2d) {
+    d_splat2d.nsplats = nsplats;
+    CUDA_CHECK(cudaMalloc(&d_splat2d.pos2d, nsplats * sizeof(vec2f)));
+    CUDA_CHECK(cudaMalloc(&d_splat2d.depth, nsplats * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_splat2d.cov2d, nsplats * sizeof(mat2x2f)));
+    CUDA_CHECK(cudaMalloc(&d_splat2d.rect, nsplats * sizeof(vec4f)));
+    CUDA_CHECK(cudaMalloc(&d_splat2d.color, nsplats * sizeof(vec4f)));
+    return cudaSuccess;
 }
 
-void gsplat_data2d_free_at_device(SplatData2D &d_splats) {
-    cudaFree(d_splats.pos2d);
-    cudaFree(d_splats.depth);
-    cudaFree(d_splats.cov2d);
-    cudaFree(d_splats.rect);
-    cudaFree(d_splats.color);
+cudaError_t gsplat_data2d_free_at_device(SplatData2D &d_splats) {
+    CUDA_CHECK(cudaFree(d_splats.pos2d));
+    CUDA_CHECK(cudaFree(d_splats.depth));
+    CUDA_CHECK(cudaFree(d_splats.cov2d));
+    CUDA_CHECK(cudaFree(d_splats.rect));
+    CUDA_CHECK(cudaFree(d_splats.color));
+    return cudaSuccess;
 }
 
-void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_image, DebugPrintFn debug_print) {
+cudaError_t gsplat_render_to_image_at_device(SplatScene &scene, SplatData &d_splats, SplatImage &d_image_out) {
+
+    SplatData2D d_splats2d;
+    CUDA_CHECK(gsplat_data2d_create_at_device(d_splats.nsplats, d_splats2d));
+
+    CUDA_CHECK(gsplat_compute_at_device(scene, d_splats, d_splats2d));
+
+    SplatTileInfo d_tileinfo;
+    CUDA_CHECK(gsplat_tile_create_at_device(scene, d_splats2d, d_tileinfo));
+
+    CUDA_CHECK(gsplat_data2d_sort_at_device(d_splats2d, d_tileinfo));
+
+    CUDA_CHECK(SplatImage::createAtDevice(&d_image_out, scene.width, scene.height));
+
+    CUDA_CHECK(splat_image_set_color_at_device(d_image_out, scene.bgcolor));
+
+    CUDA_CHECK(gsplat_image_render_at_device(scene, d_splats2d, d_tileinfo, d_image_out));
+
+    CUDA_CHECK(gsplat_data2d_free_at_device(d_splats2d));
+
+    CUDA_CHECK(gsplat_tileinfo_free_at_device(d_tileinfo));
+
+    return cudaSuccess;
+}
+
+cudaError_t gsplat_rasterize_gpu(SplatScene &scene, SplatData &h_splats, float **out_image, DebugPrintFn debug_print) {
 
     CUDATRACE("cudaWarmUp", cuda::cudaWarmUp());
 
@@ -525,35 +569,19 @@ void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **out_imag
     cudaGetDevice(&device);
     cudaGetDeviceProperties(&prop, device);
 
-    SplatData d_splats = gsplat_data_host_to_device(splats);
-
-    SplatData2D d_splats2d = gsplat_data2d_create_at_device(d_splats.nsplats);
-
-    gsplat_compute_at_device(scene, d_splats, d_splats2d);
-    CUDA_CHECK_LAST_ERROR();
-
-    SplatTileInfo d_tileinfo = gsplat_tile_create_at_device(scene, d_splats2d);
-
-    gsplat_data2d_sort_at_device(d_splats2d, d_tileinfo);
+    SplatData d_splats;
+    CUDA_CHECK(gsplat_data_host_to_device(h_splats, d_splats));
 
     SplatImage d_image;
-    SplatImage::createAtDevice(&d_image, scene.width, scene.height);
+    CUDA_CHECK(gsplat_render_to_image_at_device(scene, d_splats, d_image));
 
-    debug_print("scene bgcolor=(%f,%f,%f,%f)\n", scene.bgcolor.x, scene.bgcolor.y, scene.bgcolor.z, scene.bgcolor.w);
+    CUDA_CHECK(d_image.toHost(out_image));
 
-    splat_image_set_color_at_device(d_image, scene.bgcolor);
-    CUDA_CHECK_LAST_ERROR();
+    CUDA_CHECK(gsplat_data_free_at_device(d_splats));
 
-    gsplat_image_render_at_device(scene, d_splats2d, d_tileinfo, d_image);
-    // gsplat_tile_paint(d_scene, d_splats2d, d_tileinfo, d_image);
-    CUDA_CHECK_LAST_ERROR();
+    CUDA_CHECK(d_image.freeAtDevice());
 
-    d_image.toHost(out_image);
-
-    gsplat_data_free_at_device(d_splats);
-    gsplat_data2d_free_at_device(d_splats2d);
-    gsplat_tileinfo_free_at_device(d_tileinfo);
-    d_image.freeAtDevice();
+    return cudaSuccess;
 }
 
 } // namespace gsplat

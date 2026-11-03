@@ -19,7 +19,7 @@ SplatTileInfo splat_tileinfo_to_host(SplatTileInfo d_tileinfo);
 
 size_t getTileMaxNumSplats(SplatTileInfo h_tileInfo);
 
-void gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
-                                   SplatImage d_image);
+cudaError_t gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
+                                          SplatImage d_image);
 
 } // namespace gsplat

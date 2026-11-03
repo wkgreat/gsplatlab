@@ -9,12 +9,21 @@
 namespace gsplat {
 namespace cuda {
 
-#define CUDA_CHECK_LAST_ERROR()                                                                                        \
+#define CUDA_CHECK_LAST_ERROR_SYNC()                                                                                   \
     do {                                                                                                               \
         cudaError_t err = cudaDeviceSynchronize();                                                                     \
         if (err != cudaSuccess) {                                                                                      \
             fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                    \
-            return;                                                                                                    \
+            return err;                                                                                                \
+        }                                                                                                              \
+    } while (0)
+
+#define CUDA_CHECK_LAST_ERROR()                                                                                        \
+    do {                                                                                                               \
+        cudaError_t err = cudaGetLastError();                                                                          \
+        if (err != cudaSuccess) {                                                                                      \
+            fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                    \
+            return err;                                                                                                \
         }                                                                                                              \
     } while (0)
 
@@ -23,7 +32,7 @@ namespace cuda {
         cudaError_t err = (call);                                                                                      \
         if (err != cudaSuccess) {                                                                                      \
             fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                    \
-            return;                                                                                                    \
+            return err;                                                                                                \
         }                                                                                                              \
     } while (0)
 
@@ -37,6 +46,7 @@ namespace cuda {
         nvtxRangePop();                                                                                                \
         if (err != cudaSuccess) {                                                                                      \
             fprintf(stderr, "CUDA error %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err));                    \
+            return err;                                                                                                \
         }                                                                                                              \
     } while (0)
 

@@ -21,8 +21,6 @@ class SplatScene:
     height = 768
 
     def __init__(self):
-        self.eye = glm.vec3(self.eye)
-        self.center = glm.vec3(self.center)
         # 相机朝向的中间状态统一用四元数（相机空间 -> 世界空间）维护
         self.orientation = self._orientation_from_look(
             self.eye, self.center, glm.vec3(0, 1, 0)
@@ -224,9 +222,7 @@ class SplatScene:
                 )
             reference = glm.normalize(reference)
             side = glm.cross(reference_up, reference)
-            head = math.atan2(
-                glm.dot(horizontal, side), glm.dot(horizontal, reference)
-            )
+            head = math.atan2(glm.dot(horizontal, side), glm.dot(horizontal, reference))
 
         _, _, cam_up = self._camera_axes()
         world_up = reference_up - forward * glm.dot(reference_up, forward)
@@ -364,6 +360,7 @@ SplatScene(
 )
 """
         return s
+
 
 class SplatSceneWidget:
     """SplatScene 的按钮 + 鼠标交互面板。
@@ -581,4 +578,7 @@ class SplatSceneWidget:
             2.0 * distance * math.tan(self.scene.fovy * 0.5) / max(canvas.height, 1)
         )
         # 拖拽方向与内容移动方向一致。
-        self.scene.camera_pan(-dx * world_per_pixel, dy * world_per_pixel)
+        pan_factor = 10
+        self.scene.camera_pan(
+            -dx * world_per_pixel * pan_factor, dy * world_per_pixel * pan_factor
+        )

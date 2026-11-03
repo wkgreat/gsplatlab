@@ -35,5 +35,10 @@
     "--background-index"
   ],
   "python-envs.defaultEnvManager": "ms-python.python:conda",
-  "python-envs.defaultPackageManager": "ms-python.python:conda"
+  "python-envs.defaultPackageManager": "ms-python.python:conda",
+  // pygsplat 以 -e 安装，Pylance 不会执行 setuptools 生成的 __editable__ finder，
+  // 且工作区根目录下同名目录会被当成 namespace package，导致 import pygsplat 无法跳转。
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/pygsplat"
+  ]
 }

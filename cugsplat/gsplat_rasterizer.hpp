@@ -19,18 +19,6 @@ namespace gsplat {
 
 void showCompileTile();
 
-// struct SplatScene {
-//     float *viewmtx;
-//     float *projmtx;
-//     float *eye;
-//     float *bgcolor;
-//     float znear;
-//     float zfar;
-//     float fovy;
-//     int width;
-//     int height;
-// };
-
 struct SplatScene {
     mat4x4f viewmtx;
     mat4x4f projmtx;
@@ -42,15 +30,6 @@ struct SplatScene {
     int width;
     int height;
 };
-
-// struct SplatData {
-//     int nsplats;
-//     float *pos3d;
-//     float *scale;
-//     float *rot;
-//     float *opacity;
-//     float *sh;
-// };
 
 struct SplatData {
     int nsplats;
@@ -121,7 +100,9 @@ struct SplatImage {
     cudaError_t freeAtDevice() { return cudaFree(image); }
 };
 
-CUGSPLAT_API void gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **image,
+cudaError_t gsplat_render_at_device(SplatScene &scene, SplatData &d_splats, SplatImage &d_image_out);
+
+CUGSPLAT_API cudaError_t gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **image,
                                        DebugPrintFn debug_print = nullptr);
 
 } // namespace gsplat

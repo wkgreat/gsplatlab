@@ -72,18 +72,24 @@ __global__ void gsplatTileAlphaCacheKernel(SplatScene d_scene, SplatData2D d_spl
         vec4f c;
         if (enid < tstr) {
             int spid = d_tileinfo.index.entries[toff + enid]; // splat id in d_splats2d
-            vec2f mu = d_splats2d.pos2d[spid];
-            mat2x2f cov2d = d_splats2d.cov2d[spid];
-            vec4f rect = d_splats2d.rect[spid];
-            vec2f dist = p - mu;
-            bool inRect = p.x >= rect.x && p.x <= rect.z && p.y >= rect.y && p.y <= rect.w;
-            float weight = inRect ? compute_weight(dist, cov2d) : 0.0f;
-            c = d_splats2d.color[spid];
-            if (weight >= 0.001) {
-                c.w *= weight;
+            float depth = d_splats2d.depth[spid];
+            if (depth > 0) { // 提前进行near/far剔除
+                vec2f mu = d_splats2d.pos2d[spid];
+                mat2x2f cov2d = d_splats2d.cov2d[spid];
+                vec4f rect = d_splats2d.rect[spid];
+                vec2f dist = p - mu;
+                bool inRect = p.x >= rect.x && p.x <= rect.z && p.y >= rect.y && p.y <= rect.w;
+                float weight = inRect ? compute_weight(dist, cov2d) : 0.0f;
+                c = d_splats2d.color[spid];
+                if (weight >= 0.001 && c.w > 0) {
+                    c.w *= weight;
+                } else {
+                    c.w = 0.0f;
+                }
             } else {
                 c.w = 0.0f;
             }
+
         } else {
             c = vec4f(0.0, 0.0, 0.0, 0.0);
         }
@@ -226,8 +232,8 @@ __global__ void gsplatTileSingleColor2ImageKernel(SplatScene d_scene, SplatTileI
     }
 }
 
-void gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
-                                   SplatImage d_image) {
+cudaError_t gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
+                                          SplatImage d_image) {
     SplatTileInfo h_tileInfo = splat_tileinfo_to_host(d_tileinfo);
     int tmns = (int)getTileMaxNumSplats(h_tileInfo);
     size_t tnpx = (size_t)h_tileInfo.size.x * h_tileInfo.size.y;
@@ -251,10 +257,8 @@ void gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, S
         free(h_tileInfo.index.offset);
         free(h_tileInfo.index.stride);
         free(h_tileInfo.index.entries);
-        return;
+        return err;
     }
-
-    fprintf(stdout, "%s tmns=%d tnpx=%zu\n", __FUNCTION__, tmns, tnpx);
 
     dim3 tileDimSize(d_tileinfo.size.x, d_tileinfo.size.y, 1);
     dim3 tileBlockDim(16, 16, 1);
@@ -286,8 +290,9 @@ void gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, S
                 CUDATRACE("gsplatTileColor2ImageKernel", gsplatTileColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(
                                                              d_scene, d_tileinfo, tileIdx, d_tilecolor, d_image.image));
             } else {
-                gsplatTileSingleColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(d_scene, d_tileinfo, tileIdx,
-                                                                                  d_scene.bgcolor, d_image.image);
+                CUDATRACE("gsplatTileSingleColor2ImageKernel",
+                          gsplatTileSingleColor2ImageKernel<<<tileBlockNum, tileBlockDim>>>(
+                              d_scene, d_tileinfo, tileIdx, d_scene.bgcolor, d_image.image));
             }
         }
     }
@@ -299,6 +304,8 @@ void gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, S
     free(h_tileInfo.index.offset);
     free(h_tileInfo.index.stride);
     free(h_tileInfo.index.entries);
+
+    return cudaSuccess;
 }
 
 } // namespace gsplat
