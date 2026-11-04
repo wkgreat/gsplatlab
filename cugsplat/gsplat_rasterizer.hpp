@@ -103,6 +103,6 @@ struct SplatImage {
 cudaError_t gsplat_render_at_device(SplatScene &scene, SplatData &d_splats, SplatImage &d_image_out);
 
 CUGSPLAT_API cudaError_t gsplat_rasterize_gpu(SplatScene &scene, SplatData &splats, float **image,
-                                       DebugPrintFn debug_print = nullptr);
+                                              DebugPrintFn debug_print = nullptr);
 
 } // namespace gsplat

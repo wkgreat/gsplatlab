@@ -171,7 +171,7 @@ __global__ void gsplat_tile_splat_count_kernel(SplatScene d_scene, SplatData2D d
         return;
     }
     float depth = d_splats2d.depth[id];
-    if (depth <= 0) {
+    if (depth <= MIN_DEPTH) {
         return;
     }
     vec4f rect = d_splats2d.rect[id];
@@ -195,7 +195,7 @@ __global__ void gsplat_tile_splat_index_kernel(SplatScene d_scene, SplatData2D d
         return;
     }
     float depth = d_splats2d.depth[id];
-    if (depth <= 0) {
+    if (depth <= MIN_DEPTH) {
         return;
     }
     vec4f rect = d_splats2d.rect[id];
@@ -541,6 +541,8 @@ cudaError_t gsplat_render_to_image_at_device(SplatScene &scene, SplatData &d_spl
     CUDA_CHECK(gsplat_data2d_create_at_device(d_splats.nsplats, d_splats2d));
 
     CUDA_CHECK(gsplat_compute_at_device(scene, d_splats, d_splats2d));
+
+    //TODO filter with frustum
 
     SplatTileInfo d_tileinfo;
     CUDA_CHECK(gsplat_tile_create_at_device(scene, d_splats2d, d_tileinfo));

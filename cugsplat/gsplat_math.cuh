@@ -4,10 +4,13 @@
 
 namespace gsplat {
 
-__host__ __device__ inline float clamp(float v, float a, float b) {
-    v = v < a ? a : v;
-    v = v > b ? b : v;
-    return v;
+constexpr float MIN_DEPTH = 0.2;
+constexpr float FLT_ERROR = 1E-6;
+
+__host__ __device__ inline float clamp(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
+
+__host__ __device__ inline bool flteq(float a, float b) {
+    return fabsf(a - b) <= FLT_ERROR * fmaxf(1.0f, fmaxf(fabsf(a), fabsf(b)));
 }
 
 __host__ __device__ inline float sigmoid(float x) { return 1.0f / (1 + exp(-x)); }
@@ -72,6 +75,24 @@ __host__ __device__ inline vec4f compute_rect(vec2f pixpos, mat2x2f cov2d) {
     float ymin = v - r;
     float ymax = v + r;
     return vec4f(xmin, ymin, xmax, ymax);
+}
+
+__host__ __device__ inline vec4f clmap_rect(vec4f rect, int width, int height) {
+    vec4f cr;
+    cr[0] = fmaxf(rect[0], 0);
+    cr[1] = fmaxf(rect[1], 0);
+    cr[2] = fminf(rect[2], width);
+    cr[3] = fminf(rect[3], height);
+    return cr;
+}
+
+__host__ __device__ inline bool outside_fustum(vec4f rect, float depth, int width, int height) {
+    bool outside = false;
+    vec4f cr = clmap_rect(rect, width, height);
+    outside |= depth <= 0.2;
+    outside |= flteq(cr[2] - cr[0]);
+    outside |= flteq(cr[3] - cr[1]);
+    return outside;
 }
 
 __host__ __device__ inline vec3f compute_color(vec3f *sh, vec3f d) {

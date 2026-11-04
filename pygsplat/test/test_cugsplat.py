@@ -7,11 +7,11 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 # dataName = "cactus_splat3.ply"
 # sceneName = "cactus_splat3.scene.json"
 
-# dataName = "Where_it_belongs.ply"
-# sceneName = "Porsche_992_GT3RS_2023.scene.json"
+dataName = "Where_it_belongs.ply"
+sceneName = "Where_it_belongs.scene.json"
 
-dataName = "Porsche_992_GT3RS_2023.ply"
-sceneName = "Porsche_992_GT3RS_2023.scene.json"
+# dataName = "Porsche_992_GT3RS_2023.ply"
+# sceneName = "Porsche_992_GT3RS_2023.scene.json"
 
 dataPath = os.path.join(script_dir, f"../../data/{dataName}")
 scenePath = os.path.join(script_dir, f"../../data/{sceneName}")
