@@ -7,15 +7,36 @@ namespace gsplat {
 constexpr float MIN_DEPTH = 0.2;
 constexpr float FLT_ERROR = 1E-6;
 
-__host__ __device__ inline float clamp(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
+template <typename T> struct Range {
+    T min, max;
+};
 
-__host__ __device__ inline bool flteq(float a, float b) {
+template <typename T> struct Box2D {
+    Range<T> x;
+    Range<T> y;
+};
+
+template <typename T> __host__ __device__ __forceinline__ bool range_overlap(Range<T> r0, Range<T> r1) {
+    return !(r0.max < r1.min || r0.min > r1.max);
+}
+
+__host__ __device__ __forceinline__ bool point_in_box(vec2f v, vec4f box) {
+    return v.x >= box.x && v.x <= box.z && v.y >= box.y && v.y <= box.w;
+}
+
+template <typename T> __host__ __device__ __forceinline__ bool box_overlap(Box2D<T> a, Box2D<T> b) {
+    return range_overlap(a.x, b.x) && range_overlap(a.y, b.y);
+}
+
+template <typename T> __host__ __device__ __forceinline__ T clamp(T v, T a, T b) { return v < a ? a : (v > b ? b : v); }
+
+__host__ __device__ __forceinline__ bool flteq(float a, float b) {
     return fabsf(a - b) <= FLT_ERROR * fmaxf(1.0f, fmaxf(fabsf(a), fabsf(b)));
 }
 
-__host__ __device__ inline float sigmoid(float x) { return 1.0f / (1 + exp(-x)); }
+__host__ __device__ __forceinline__ float sigmoid(float x) { return 1.0f / (1 + exp(-x)); }
 
-__host__ __device__ inline float compute_weight(vec2f d, mat2x2f Cov2D) {
+__host__ __device__ __forceinline__ float compute_weight(vec2f d, mat2x2f Cov2D) {
     float a = Cov2D[0][0];
     float b = Cov2D[1][0];
     float c = Cov2D[1][1];
@@ -25,7 +46,7 @@ __host__ __device__ inline float compute_weight(vec2f d, mat2x2f Cov2D) {
     return weight;
 }
 
-__host__ __device__ inline mat2x3f compute_jacobian(vec4f &viewpos, vec2f &viewport, float fovy) {
+__host__ __device__ __forceinline__ mat2x3f compute_jacobian(vec4f &viewpos, vec2f &viewport, float fovy) {
     float x = viewpos.x;
     float y = viewpos.y;
     float z = min(-0.05, viewpos.z);
@@ -36,7 +57,7 @@ __host__ __device__ inline mat2x3f compute_jacobian(vec4f &viewpos, vec2f &viewp
     return mat2x3f(focal / z, 0.0, 0.0 - focal * x / z2, 0.0, focal / z, 0.0 - focal * y / z2);
 }
 
-__host__ __device__ inline mat3x3f quat_to_mat3(vec4f q) {
+__host__ __device__ __forceinline__ mat3x3f quat_to_mat3(vec4f q) {
     vec4f nq = normalize(q);
 
     float x = nq.x;
@@ -60,7 +81,7 @@ __host__ __device__ inline mat3x3f quat_to_mat3(vec4f q) {
                    2.0 * (yz - wx), 2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy));
 }
 
-__host__ __device__ inline vec4f compute_rect(vec2f pixpos, mat2x2f cov2d) {
+__host__ __device__ __forceinline__ vec4f compute_rect(vec2f pixpos, mat2x2f cov2d) {
     float u = pixpos.x;
     float v = pixpos.y;
     float sxx = cov2d[0][0];
@@ -77,7 +98,7 @@ __host__ __device__ inline vec4f compute_rect(vec2f pixpos, mat2x2f cov2d) {
     return vec4f(xmin, ymin, xmax, ymax);
 }
 
-__host__ __device__ inline vec4f clmap_rect(vec4f rect, int width, int height) {
+__host__ __device__ __forceinline__ vec4f clmap_rect(vec4f rect, int width, int height) {
     vec4f cr;
     cr[0] = fmaxf(rect[0], 0);
     cr[1] = fmaxf(rect[1], 0);
@@ -86,16 +107,16 @@ __host__ __device__ inline vec4f clmap_rect(vec4f rect, int width, int height) {
     return cr;
 }
 
-__host__ __device__ inline bool outside_fustum(vec4f rect, float depth, int width, int height) {
+__host__ __device__ __forceinline__ bool outside_fustum(vec4f rect, float depth, int width, int height) {
     bool outside = false;
     vec4f cr = clmap_rect(rect, width, height);
     outside |= depth <= 0.2;
-    outside |= flteq(cr[2] - cr[0]);
-    outside |= flteq(cr[3] - cr[1]);
+    outside |= flteq(cr[2], cr[0]);
+    outside |= flteq(cr[3], cr[1]);
     return outside;
 }
 
-__host__ __device__ inline vec3f compute_color(vec3f *sh, vec3f d) {
+__host__ __device__ __forceinline__ vec3f compute_color(vec3f *sh, vec3f d) {
 
     float x = d.x;
     float y = d.y;

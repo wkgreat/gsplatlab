@@ -10,6 +10,122 @@
 
 namespace gsplat {
 
+__global__ void gsplat_tile_splat_count_kernel(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo) {
+    int id = blockDim.x * blockIdx.x + threadIdx.x;
+    if (id >= d_splats2d.nsplats) {
+        return;
+    }
+    float depth = d_splats2d.depth[id];
+    vec4f rect = d_splats2d.rect[id];
+    if (outside_fustum(rect, depth, d_scene.width, d_scene.height)) {
+        return;
+    }
+
+    Box2D<int> splatBox{(int)floor(rect.x), (int)ceil(rect.z), (int)floor(rect.y), (int)ceil(rect.w)};
+    Box2D<int> tileBox;
+    for (int tileX = 0; tileX < d_tileinfo.nums.x; ++tileX) {
+        for (int tileY = 0; tileY < d_tileinfo.nums.y; ++tileY) {
+            tileBox = gsplat_tile_box(d_scene, d_tileinfo, tileX, tileY);
+            if (box_overlap(splatBox, tileBox)) {
+                atomicAdd(d_tileinfo.index.stride + tileY * d_tileinfo.nums.x + tileX, 1);
+            }
+        }
+    }
+}
+
+__global__ void gsplat_tile_splat_index_kernel(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
+                                               int *tileK) {
+
+    int id = blockDim.x * blockIdx.x + threadIdx.x;
+    if (id >= d_splats2d.nsplats) {
+        return;
+    }
+    float depth = d_splats2d.depth[id];
+    vec4f rect = d_splats2d.rect[id];
+    if (outside_fustum(rect, depth, d_scene.width, d_scene.height)) {
+        return;
+    }
+    Box2D<int> splatBox{(int)floor(rect.x), (int)ceil(rect.z), (int)floor(rect.y), (int)ceil(rect.w)};
+    Box2D<int> tileBox;
+    for (int tileX = 0; tileX < d_tileinfo.nums.x; ++tileX) {
+        for (int tileY = 0; tileY < d_tileinfo.nums.y; ++tileY) {
+            int tileId = tileY * d_tileinfo.nums.x + tileX;
+            tileBox = gsplat_tile_box(d_scene, d_tileinfo, tileX, tileY);
+            if (box_overlap(splatBox, tileBox)) {
+                int k = atomicAdd(&tileK[tileId], 1);
+                if (k < d_tileinfo.index.stride[tileId] &&
+                    d_tileinfo.index.offset[tileId] + k < d_tileinfo.index.nEntries) {
+                    d_tileinfo.index.entries[d_tileinfo.index.offset[tileId] + k] = id;
+                }
+            }
+        }
+    }
+}
+
+cudaError_t gsplat_tile_create_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo &d_tileinfo) {
+
+    d_tileinfo.size.x = 64;
+    d_tileinfo.size.y = 64;
+    d_tileinfo.nums.x = (d_tileinfo.size.x + d_scene.width - 1) / d_tileinfo.size.x;
+    d_tileinfo.nums.y = (d_tileinfo.size.y + d_scene.height - 1) / d_tileinfo.size.y;
+    int totTileCnt = d_tileinfo.nums.x * d_tileinfo.nums.y;
+
+    int splatBlockDim = 256;
+    int splatGridDim = (splatBlockDim + d_splats2d.nsplats - 1) / splatBlockDim;
+
+    CUDA_CHECK(cudaMalloc(&d_tileinfo.index.stride, totTileCnt * sizeof(int)));
+    CUDA_CHECK(cudaMemset(d_tileinfo.index.stride, 0, totTileCnt * sizeof(int)));
+
+    gsplat_tile_splat_count_kernel<<<splatGridDim, splatBlockDim>>>(d_scene, d_splats2d, d_tileinfo);
+    CUDA_CHECK_LAST_ERROR();
+
+    // TODO compute nEntries and offset in gpu
+    int *idxcnt_cpu = (int *)std::malloc(totTileCnt * sizeof(int));
+    int *idxoff_cpu = (int *)std::malloc(totTileCnt * sizeof(int));
+    memset(idxoff_cpu, 0, totTileCnt * sizeof(int));
+    CUDA_CHECK(cudaMemcpy(idxcnt_cpu, d_tileinfo.index.stride, totTileCnt * sizeof(int), cudaMemcpyDeviceToHost));
+
+    int nEntries = 0;
+    // 计算tile-splat索引里面，每个tile的指针偏移
+    for (int x = 0; x < d_tileinfo.nums.x; ++x) {
+        for (int y = 0; y < d_tileinfo.nums.y; ++y) {
+            int k = y * d_tileinfo.nums.x + x;
+            nEntries += idxcnt_cpu[k];
+        }
+    }
+    int cumsum = 0;
+    for (int k = 0; k < totTileCnt; ++k) {
+        idxoff_cpu[k] = cumsum;
+        cumsum += idxcnt_cpu[k];
+    }
+    d_tileinfo.index.nEntries = nEntries;
+
+    CUDA_CHECK(cudaMalloc(&d_tileinfo.index.offset, totTileCnt * sizeof(int)));
+    CUDA_CHECK(cudaMemcpy(d_tileinfo.index.offset, idxoff_cpu, totTileCnt * sizeof(int), cudaMemcpyHostToDevice));
+
+    CUDA_CHECK(cudaMalloc(&d_tileinfo.index.entries, nEntries * sizeof(int)));
+
+    int *tileK;
+    CUDA_CHECK(cudaMalloc(&tileK, totTileCnt * sizeof(int)));
+    CUDA_CHECK(cudaMemset(tileK, 0, totTileCnt * sizeof(int)));
+
+    gsplat_tile_splat_index_kernel<<<splatGridDim, splatBlockDim>>>(d_scene, d_splats2d, d_tileinfo, tileK);
+    CUDA_CHECK_LAST_ERROR();
+
+    free(idxcnt_cpu);
+    free(idxoff_cpu);
+    CUDA_CHECK(cudaFree(tileK));
+
+    return cudaSuccess;
+}
+
+cudaError_t gsplat_tileinfo_free_at_device(SplatTileInfo d_tileinfo) {
+    CUDA_CHECK(cudaFree(d_tileinfo.index.offset));
+    CUDA_CHECK(cudaFree(d_tileinfo.index.stride));
+    CUDA_CHECK(cudaFree(d_tileinfo.index.entries));
+    return cudaSuccess;
+}
+
 size_t getTileMaxNumSplats(SplatTileInfo h_tileInfo) {
 
     int maxStride = 0;

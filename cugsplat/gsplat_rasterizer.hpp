@@ -49,15 +49,6 @@ struct SplatData2D {
     vec4f *color;
 };
 
-template <typename T> struct Range {
-    T min, max;
-};
-
-template <typename T> struct Box2D {
-    Range<T> x;
-    Range<T> y;
-};
-
 struct SplatImage {
     int width;
     int height;
