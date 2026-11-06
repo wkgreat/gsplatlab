@@ -215,7 +215,8 @@ cudaError_t gsplat_tile_splat_sort_at_device(SplatData2D splats2d, SplatTileInfo
 
 cudaError_t gsplat_data2d_sort_at_device(SplatData2D splats2d, SplatTileInfo d_tileinfo) {
 
-    SplatTileInfo h_tileinfo = splat_tileinfo_to_host(d_tileinfo);
+    SplatTileInfo h_tileinfo;
+    gsplat_tileinfo_to_host(d_tileinfo, h_tileinfo);
 
     size_t maxTileSplatCount = getTileMaxNumSplats(h_tileinfo);
     size_t m = bitCeil(maxTileSplatCount);
@@ -396,8 +397,6 @@ cudaError_t gsplat_render_to_image_at_device(SplatScene &scene, SplatData &d_spl
     CUDA_CHECK(gsplat_data2d_create_at_device(d_splats.nsplats, d_splats2d));
 
     CUDA_CHECK(gsplat_compute_at_device(scene, d_splats, d_splats2d));
-
-    //TODO filter with frustum
 
     SplatTileInfo d_tileinfo;
     CUDA_CHECK(gsplat_tile_create_at_device(scene, d_splats2d, d_tileinfo));

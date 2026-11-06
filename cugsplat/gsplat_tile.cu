@@ -141,23 +141,38 @@ size_t getTileMaxNumSplats(SplatTileInfo h_tileInfo) {
     return maxStride;
 }
 
-SplatTileInfo splat_tileinfo_to_host(SplatTileInfo d_tileinfo) {
+cudaError_t gsplat_tileinfo_to_host(SplatTileInfo d_tileinfo, SplatTileInfo &h_tileinfo) {
 
-    SplatTileInfo h_tileinfo;
+    cudaError_t err;
 
     h_tileinfo.size = d_tileinfo.size;
     h_tileinfo.nums = d_tileinfo.nums;
     size_t byteSize = d_tileinfo.nums.x * d_tileinfo.nums.y * sizeof(int);
     h_tileinfo.index.offset = (int *)malloc(byteSize);
     h_tileinfo.index.stride = (int *)malloc(byteSize);
-    cudaMemcpy(h_tileinfo.index.offset, d_tileinfo.index.offset, byteSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_tileinfo.index.stride, d_tileinfo.index.stride, byteSize, cudaMemcpyDeviceToHost);
+    err = cudaMemcpy(h_tileinfo.index.offset, d_tileinfo.index.offset, byteSize, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        free(h_tileinfo.index.offset);
+        free(h_tileinfo.index.stride);
+        return err;
+    }
+    err = cudaMemcpy(h_tileinfo.index.stride, d_tileinfo.index.stride, byteSize, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        free(h_tileinfo.index.offset);
+        free(h_tileinfo.index.stride);
+        return err;
+    }
     h_tileinfo.index.nEntries = d_tileinfo.index.nEntries;
     size_t entryByteSize = h_tileinfo.index.nEntries * sizeof(int);
     h_tileinfo.index.entries = (int *)malloc(entryByteSize);
-    cudaMemcpy(h_tileinfo.index.entries, d_tileinfo.index.entries, entryByteSize, cudaMemcpyDeviceToHost);
-
-    return h_tileinfo;
+    err = cudaMemcpy(h_tileinfo.index.entries, d_tileinfo.index.entries, entryByteSize, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        free(h_tileinfo.index.offset);
+        free(h_tileinfo.index.stride);
+        free(h_tileinfo.index.entries);
+        return err;
+    }
+    return cudaSuccess;
 }
 
 __device__ inline vec2i gsplatTileLocalPixIdxToGlobalPixIdx(SplatTileInfo d_tileinfo, vec2i tileIdx, vec2i pixIdx) {
@@ -350,7 +365,8 @@ __global__ void gsplatTileSingleColor2ImageKernel(SplatScene d_scene, SplatTileI
 
 cudaError_t gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
                                           SplatImage d_image) {
-    SplatTileInfo h_tileInfo = splat_tileinfo_to_host(d_tileinfo);
+    SplatTileInfo h_tileInfo;
+    gsplat_tileinfo_to_host(d_tileinfo, h_tileInfo);
     int tmns = (int)getTileMaxNumSplats(h_tileInfo);
     size_t tnpx = (size_t)h_tileInfo.size.x * h_tileInfo.size.y;
     vec4f *d_cacheColor = nullptr; //(rgb,alpha)

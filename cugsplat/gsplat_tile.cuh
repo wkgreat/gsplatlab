@@ -35,7 +35,7 @@ cudaError_t gsplat_tile_create_at_device(SplatScene d_scene, SplatData2D d_splat
 
 cudaError_t gsplat_tileinfo_free_at_device(SplatTileInfo d_tileinfo);
 
-SplatTileInfo splat_tileinfo_to_host(SplatTileInfo d_tileinfo);
+cudaError_t gsplat_tileinfo_to_host(SplatTileInfo d_tileinfo, SplatTileInfo &h_tileinfo);
 
 size_t getTileMaxNumSplats(SplatTileInfo h_tileInfo);
 
