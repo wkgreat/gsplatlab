@@ -12,6 +12,8 @@ if (-not $isAdmin) {
     $cpuTrace = @('--sample=none', '--cpuctxsw=none')
 }
 
-nsys profile @cpuTrace --trace="cuda,nvtx" -o $ProfileFile conda run -n gsplatlab python ./pygsplat/gsplat_rasterize_test.py
+$Duration = 60
+
+nsys profile @cpuTrace --trace="cuda,nvtx" --duration=$Duration -o $ProfileFile conda run -n gsplatlab python ./pygsplat/test/test_cugsplat.py
 
 nsys-ui "$ProfileFile.nsys-rep"

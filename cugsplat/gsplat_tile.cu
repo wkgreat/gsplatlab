@@ -17,7 +17,7 @@ __global__ void gsplat_tile_splat_count_kernel(SplatScene d_scene, SplatData2D d
     }
     float depth = d_splats2d.depth[id];
     vec4f rect = d_splats2d.rect[id];
-    if (outside_fustum(rect, depth, d_scene.width, d_scene.height)) {
+    if (config::FRUSTUM_CULLING && outside_fustum(rect, depth, d_scene.width, d_scene.height)) {
         return;
     }
 
@@ -42,7 +42,7 @@ __global__ void gsplat_tile_splat_index_kernel(SplatScene d_scene, SplatData2D d
     }
     float depth = d_splats2d.depth[id];
     vec4f rect = d_splats2d.rect[id];
-    if (outside_fustum(rect, depth, d_scene.width, d_scene.height)) {
+    if (config::FRUSTUM_CULLING && outside_fustum(rect, depth, d_scene.width, d_scene.height)) {
         return;
     }
     Box2D<int> splatBox{(int)floor(rect.x), (int)ceil(rect.z), (int)floor(rect.y), (int)ceil(rect.w)};

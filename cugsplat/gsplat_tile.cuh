@@ -3,6 +3,7 @@
 #include "gsplat_rasterizer.hpp"
 #include "cuda_utils.cuh"
 #include "gsplat_math.cuh"
+#include "gsplat_config.cuh"
 
 namespace gsplat {
 

@@ -394,23 +394,32 @@ cudaError_t gsplat_data2d_free_at_device(SplatData2D &d_splats) {
 cudaError_t gsplat_render_to_image_at_device(SplatScene &scene, SplatData &d_splats, SplatImage &d_image_out) {
 
     SplatData2D d_splats2d;
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_data2d_create_at_device");
     CUDA_CHECK(gsplat_data2d_create_at_device(d_splats.nsplats, d_splats2d));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_compute_at_device");
     CUDA_CHECK(gsplat_compute_at_device(scene, d_splats, d_splats2d));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_tile_create_at_device");
     SplatTileInfo d_tileinfo;
     CUDA_CHECK(gsplat_tile_create_at_device(scene, d_splats2d, d_tileinfo));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_data2d_sort_at_device");
     CUDA_CHECK(gsplat_data2d_sort_at_device(d_splats2d, d_tileinfo));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "SplatImage::createAtDevice");
     CUDA_CHECK(SplatImage::createAtDevice(&d_image_out, scene.width, scene.height));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "splat_image_set_color_at_device");
     CUDA_CHECK(splat_image_set_color_at_device(d_image_out, scene.bgcolor));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_image_render_at_device");
     CUDA_CHECK(gsplat_image_render_at_device(scene, d_splats2d, d_tileinfo, d_image_out));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_data2d_free_at_device");
     CUDA_CHECK(gsplat_data2d_free_at_device(d_splats2d));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_tileinfo_free_at_device");
     CUDA_CHECK(gsplat_tileinfo_free_at_device(d_tileinfo));
 
     return cudaSuccess;
@@ -426,15 +435,20 @@ cudaError_t gsplat_rasterize_gpu(SplatScene &scene, SplatData &h_splats, float *
     cudaGetDeviceProperties(&prop, device);
 
     SplatData d_splats;
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_data_host_to_device");
     CUDA_CHECK(gsplat_data_host_to_device(h_splats, d_splats));
 
     SplatImage d_image;
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_render_to_image_at_device");
     CUDA_CHECK(gsplat_render_to_image_at_device(scene, d_splats, d_image));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "d_image.toHost");
     CUDA_CHECK(d_image.toHost(out_image));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_data_free_at_device");
     CUDA_CHECK(gsplat_data_free_at_device(d_splats));
 
+    fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "d_image.freeAtDevice");
     CUDA_CHECK(d_image.freeAtDevice());
 
     return cudaSuccess;
