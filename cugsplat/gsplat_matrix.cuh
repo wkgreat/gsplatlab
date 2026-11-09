@@ -18,7 +18,7 @@ struct alignas(8) vec2i {
 };
 
 struct alignas(8) vec2f {
-    float x = 0.0, y = 0.0;
+    float x = 0.0f, y = 0.0f;
     __host__ __device__ vec2f() {};
     __host__ __device__ vec2f(float x, float y) : x(x), y(y) {};
     __host__ __device__ vec2f(vec2i v) : x((float)v.x), y((float)v.y) {};
@@ -31,7 +31,7 @@ struct alignas(8) vec2f {
 };
 
 struct vec3f {
-    float x = 0.0, y = 0.0, z = 0.0;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
     __host__ __device__ vec3f() {};
     __host__ __device__ vec3f(float x, float y, float z) : x(x), y(y), z(z) {};
     __host__ __device__ vec3f(const float *data) {

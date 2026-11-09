@@ -183,7 +183,7 @@ __device__ inline vec2i gsplatTileLocalPixIdxToGlobalPixIdx(SplatTileInfo d_tile
 
 __device__ inline vec2f gsplatTileLocalPixelToScreenCoords(SplatTileInfo d_tileinfo, vec2i tileIdx, vec2i pixIdx) {
     vec2i gidx = gsplatTileLocalPixIdxToGlobalPixIdx(d_tileinfo, tileIdx, pixIdx);
-    return vec2f(gidx.x + 0.5, gidx.y + 0.5);
+    return vec2f(gidx.x + 0.5f, gidx.y + 0.5f);
 }
 
 __global__ void gsplatTileAlphaCacheKernel(SplatScene d_scene, SplatData2D d_splats2d, SplatTileInfo d_tileinfo,
@@ -212,7 +212,7 @@ __global__ void gsplatTileAlphaCacheKernel(SplatScene d_scene, SplatData2D d_spl
                 bool inRect = p.x >= rect.x && p.x <= rect.z && p.y >= rect.y && p.y <= rect.w;
                 float weight = inRect ? compute_weight(dist, cov2d) : 0.0f;
                 c = d_splats2d.color[spid];
-                if (weight >= 0.001 && c.w > 0) {
+                if (weight >= 0.001f && c.w > 0) {
                     c.w *= weight;
                 } else {
                     c.w = 0.0f;
@@ -222,10 +222,10 @@ __global__ void gsplatTileAlphaCacheKernel(SplatScene d_scene, SplatData2D d_spl
             }
 
         } else {
-            c = vec4f(0.0, 0.0, 0.0, 0.0);
+            c = vec4f(0.0f, 0.0f, 0.0f, 0.0f);
         }
         d_cacheColor[cacheIdx] = c;
-        d_cacheTrans[cacheIdx] = 1.0 - c.w;
+        d_cacheTrans[cacheIdx] = 1.0f - c.w;
     }
 }
 
@@ -323,7 +323,7 @@ cudaError_t gsplatTilePixelFinalColor(SplatTileInfo d_tileinfo, unsigned int tid
 
     auto seginfo = tileSegCache.getTileSegment(d_tileinfo, tid, tmns, stride);
 
-    vec4f initColor{0.0, 0.0, 0.0, 0.0};
+    vec4f initColor{0.0f, 0.0f, 0.0f, 0.0f};
     cudaError_t err = cub::DeviceSegmentedReduce::Reduce(d_cacheColor, d_tilecolor, seginfo.nsegs, seginfo.d_begin,
                                                          seginfo.d_end, sumop, initColor);
 

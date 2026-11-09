@@ -60,6 +60,20 @@ inline dim3 BLOCKNUM(dim3 blockDim, dim3 dimSize) {
 
 inline cudaError_t cudaWarmUp() { return cudaFree(0); }
 
+inline cudaError_t printCudaInfo(int device) {
+
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, device);
+    printf("[cugsplat][cudainfo] Device Name: %s\n", prop.name);
+    printf("[cugsplat][cudainfo] SM Nums: %d\n", prop.multiProcessorCount);
+    printf("[cugsplat][cudainfo] Max Thread Nums per SM: %d\n", prop.maxThreadsPerMultiProcessor);
+    printf("[cugsplat][cudainfo] Max Thread Nums per Block: %d\n", prop.maxThreadsPerBlock);
+    printf("[cugsplat][cudainfo] Max Shared Mem per SM: %zu\n", prop.sharedMemPerMultiprocessor);
+    printf("[cugsplat][cudainfo] Warp Size: %d\n", prop.warpSize);
+
+    return cudaSuccess;
+}
+
 } // namespace cuda
 
 } // namespace gsplat

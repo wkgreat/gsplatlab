@@ -55,7 +55,7 @@ __global__ void gsplat_compute_kernel(SplatScene d_scene, SplatData d_splats, Sp
     vec4f ndcpos = d_scene.projmtx * viewpos;
     ndcpos = ndcpos / ndcpos.w;
     vec2f viewport{d_scene.width * 1.0f, d_scene.height * 1.0f};
-    vec2f pixpos = (ndcpos.xy() * 0.5 + 0.5) * viewport; // 这里不flipY，最终图像生成完成，再统一flip
+    vec2f pixpos = (ndcpos.xy() * 0.5f + 0.5f) * viewport; // 这里不flipY，最终图像生成完成，再统一flip
     mat2x3f J = compute_jacobian(viewpos, viewport, d_scene.fovy);
 
     mat3x3f S = mat3x3f(exp(scale.x), 0, 0, 0, exp(scale.y), 0, 0, 0, exp(scale.z));
@@ -66,8 +66,8 @@ __global__ void gsplat_compute_kernel(SplatScene d_scene, SplatData d_splats, Sp
     Cov3D = viewmtx3 * (Cov3D * viewmtx3.T());
     mat2x2f Cov2D = J * (Cov3D * J.T());
 
-    Cov2D[0][0] += 0.3;
-    Cov2D[1][1] += 0.3;
+    Cov2D[0][0] += 0.3f;
+    Cov2D[1][1] += 0.3f;
 
     vec4f rect = compute_rect(pixpos, Cov2D);
     vec3f direct = normalize(worldpos.xyz() - d_scene.eye);
@@ -293,7 +293,7 @@ __global__ void gsplat_tile_paint_kernel(SplatScene scene, SplatData2D splats2d,
                     vec2f d = p - pos2d;
 
                     float weight = compute_weight(d, cov2d);
-                    if (weight >= 0.001) {
+                    if (weight >= 0.001f) {
                         float alpha = opa * weight;
 
                         vec4f rgba = image[py * scene.width + px];
@@ -323,7 +323,7 @@ __global__ void gsplat_image_opacity_kernel(vec4f *d_image, bool *d_imgmask, Spl
             rgba.x = rgba.x + rgba.w * d_scene.bgcolor.x;
             rgba.y = rgba.y + rgba.w * d_scene.bgcolor.y;
             rgba.z = rgba.z + rgba.w * d_scene.bgcolor.z;
-            rgba.w = 1.0; // opacity
+            rgba.w = 1.0f; // opacity
             d_image[idx] = rgba;
         }
     }
@@ -433,6 +433,8 @@ cudaError_t gsplat_rasterize_gpu(SplatScene &scene, SplatData &h_splats, float *
     int device = 0;
     cudaGetDevice(&device);
     cudaGetDeviceProperties(&prop, device);
+
+    cuda::printCudaInfo(device);
 
     SplatData d_splats;
     fprintf(stdout, "[cugsplat][%s] %s\n", __FUNCTION__, "gsplat_data_host_to_device");

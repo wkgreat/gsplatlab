@@ -39,12 +39,12 @@ void image_set_color_gpu(vec4f *d_image, SplatSceneGPU d_scene) {
 __device__ mat2x3f compute_jacobian(vec4f &viewpos, vec2f &viewport, float fovy) {
     float x = viewpos.x;
     float y = viewpos.y;
-    float z = min(-0.05, viewpos.z);
+    float z = min(-0.05f, viewpos.z);
     float z2 = z * z;
     float height = viewport.y;
-    float focal = height / (2.0 * tan(fovy * 0.5));
+    float focal = height / (2.0f * tan(fovy * 0.5f));
 
-    return mat2x3f(focal / z, 0.0, 0.0 - focal * x / z2, 0.0, focal / z, 0.0 - focal * y / z2);
+    return mat2x3f(focal / z, 0.0f, 0.0f - focal * x / z2, 0.0f, focal / z, 0.0f - focal * y / z2);
 }
 
 __device__ mat3x3f quat_to_mat3(vec4f q) {
@@ -67,8 +67,8 @@ __device__ mat3x3f quat_to_mat3(vec4f q) {
     float wy = w * y;
     float wz = w * z;
 
-    return mat3x3f(1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy), 2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz),
-                   2.0 * (yz - wx), 2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy));
+    return mat3x3f(1.0f - 2.0f * (yy + zz), 2.0f * (xy - wz), 2.0f * (xz + wy), 2.0f * (xy + wz), 1.0f - 2.0f * (xx + zz),
+                   2.0f * (yz - wx), 2.0f * (xz - wy), 2.0f * (yz + wx), 1.0f - 2.0f * (xx + yy));
 }
 
 __device__ float clamp(float v, float a, float b) {
@@ -84,9 +84,9 @@ __device__ vec4f compute_rect(vec2f pixpos, mat2x2f cov2d) {
     float syy = cov2d[1][1];
     float sxy = cov2d[0][1];
     float trace = sxx + syy;
-    float det = max(sxx * syy - sxy * sxy, 1e-6);
-    float lambda_max = 0.5 * (trace + sqrt(max(0.0, trace * trace - 4.0 * det)));
-    float r = clamp(3.0 * sqrt(lambda_max), 1.0, 1024.0);
+    float det = max(sxx * syy - sxy * sxy, 1e-6f);
+    float lambda_max = 0.5f * (trace + sqrt(max(0.0f, trace * trace - 4.0f * det)));
+    float r = clamp(3.0f * sqrt(lambda_max), 1.0f, 1024.0f);
     float xmin = u - r;
     float xmax = u + r;
     float ymin = v - r;
@@ -107,12 +107,12 @@ __device__ vec3f compute_color(vec3f *sh, vec3f d) {
     float yz = y * z;
     float xz = x * z;
 
-    const float SH_C0 = 0.28209479177387814;
-    const float SH_C1 = 0.4886025119029199;
-    const float SH_C2[5]{1.0925484305920792, -1.0925484305920792, 0.31539156525252005, -1.0925484305920792,
-                         0.5462742152960396};
-    const float SH_C3[7]{-0.5900435899266435, 2.890611442640554, -0.4570457994644658, 0.3731763325901154,
-                         -0.4570457994644658, 1.445305721320277, -0.5900435899266435};
+    const float SH_C0 = 0.28209479177387814f;
+    const float SH_C1 = 0.4886025119029199f;
+    const float SH_C2[5]{1.0925484305920792f, -1.0925484305920792f, 0.31539156525252005f, -1.0925484305920792f,
+                         0.5462742152960396f};
+    const float SH_C3[7]{-0.5900435899266435f, 2.890611442640554f, -0.4570457994644658f, 0.3731763325901154f,
+                         -0.4570457994644658f, 1.445305721320277f, -0.5900435899266435f};
 
     vec3f ret = SH_C0 * sh[0];
 
@@ -122,20 +122,20 @@ __device__ vec3f compute_color(vec3f *sh, vec3f d) {
     // Degree 2
     ret += SH_C2[0] * xy * sh[4];
     ret += SH_C2[1] * yz * sh[5];
-    ret += SH_C2[2] * (2.0 * z2 - x2 - y2) * sh[6];
+    ret += SH_C2[2] * (2.0f * z2 - x2 - y2) * sh[6];
     ret += SH_C2[3] * xz * sh[7];
     ret += SH_C2[4] * (x2 - y2) * sh[8];
 
     // Degree 3
-    ret += SH_C3[0] * y * (3.0 * x2 - y2) * sh[9];
+    ret += SH_C3[0] * y * (3.0f * x2 - y2) * sh[9];
     ret += SH_C3[1] * xy * z * sh[10];
-    ret += SH_C3[2] * y * (4.0 * z2 - x2 - y2) * sh[11];
-    ret += SH_C3[3] * z * (2.0 * z2 - 3.0 * x2 - 3.0 * y2) * sh[12];
-    ret += SH_C3[4] * x * (4.0 * z2 - x2 - y2) * sh[13];
+    ret += SH_C3[2] * y * (4.0f * z2 - x2 - y2) * sh[11];
+    ret += SH_C3[3] * z * (2.0f * z2 - 3.0f * x2 - 3.0f * y2) * sh[12];
+    ret += SH_C3[4] * x * (4.0f * z2 - x2 - y2) * sh[13];
     ret += SH_C3[5] * z * (x2 - y2) * sh[14];
-    ret += SH_C3[6] * x * (x2 - 3.0 * y2) * sh[15];
+    ret += SH_C3[6] * x * (x2 - 3.0f * y2) * sh[15];
 
-    return max(ret + 0.5, vec3f(0, 0, 0));
+    return max(ret + 0.5f, vec3f(0, 0, 0));
 }
 
 __device__ float sigmoid(float x) { return 1.0f / (1 + exp(-x)); }
@@ -156,7 +156,7 @@ __global__ void gsplat_compute_kernel(SplatSceneGPU d_scene, SplatDataGPU d_spla
     vec4f ndcpos = d_scene.projmtx * viewpos;
     ndcpos = ndcpos / ndcpos.w;
     vec2f viewport{d_scene.width * 1.0f, d_scene.height * 1.0f};
-    vec2f pixpos = (ndcpos.xy() * 0.5 + 0.5) * viewport; // 这里不flipY，最终图像生成完成，再统一flip
+    vec2f pixpos = (ndcpos.xy() * 0.5f + 0.5f) * viewport; // 这里不flipY，最终图像生成完成，再统一flip
     mat2x3f J = compute_jacobian(viewpos, viewport, d_scene.fovy);
 
     mat3x3f S = mat3x3f(exp(scale.x), 0, 0, 0, exp(scale.y), 0, 0, 0, exp(scale.z));
@@ -167,8 +167,8 @@ __global__ void gsplat_compute_kernel(SplatSceneGPU d_scene, SplatDataGPU d_spla
     Cov3D = viewmtx3 * (Cov3D * viewmtx3.T());
     mat2x2f Cov2D = J * (Cov3D * J.T());
 
-    Cov2D[0][0] += 0.3;
-    Cov2D[1][1] += 0.3;
+    Cov2D[0][0] += 0.3f;
+    Cov2D[1][1] += 0.3f;
 
     vec4f rect = compute_rect(pixpos, Cov2D);
     vec3f direct = normalize(worldpos.xyz() - d_scene.eye);
@@ -193,9 +193,9 @@ __device__ float compute_weight(vec2f d, mat2x2f Cov2D) {
     float a = Cov2D[0][0];
     float b = Cov2D[1][0];
     float c = Cov2D[1][1];
-    float s = max(a * c - b * b, 1e-6);
-    float r2 = (c * d.x * d.x - 2.0 * b * d.x * d.y + a * d.y * d.y) / s;
-    float weight = exp(-0.5 * r2);
+    float s = max(a * c - b * b, 1e-6f);
+    float r2 = (c * d.x * d.x - 2.0f * b * d.x * d.y + a * d.y * d.y) / s;
+    float weight = exp(-0.5f * r2);
     return weight;
 }
 
@@ -232,7 +232,7 @@ __global__ void gsplat_pixel_splat_count_kernel(SplatSceneGPU d_scene, SplatData
             pixpos = vec2f(x, y);
             d = pixpos - centerpos;
             w = compute_weight(d, cov2d);
-            if (w >= 0.001) {
+            if (w >= 0.001f) {
                 atomicAdd(out_pixSplatCnt + y * d_scene.width + x, 1);
             }
         }
@@ -552,7 +552,7 @@ __global__ void gsplat_tile_paint_kernel(SplatSceneGPU scene, SplatData2DGPU spl
                     vec2f d = p - pos2d;
 
                     float weight = compute_weight(d, cov2d);
-                    if (weight >= 0.001) {
+                    if (weight >= 0.001f) {
                         float alpha = opa * weight;
 
                         vec4f rgba = image[py * scene.width + px];
@@ -582,7 +582,7 @@ __global__ void gsplat_image_opacity_kernel(vec4f *d_image, bool *d_imgmask, Spl
             rgba.x = rgba.x + rgba.w * d_scene.bgcolor.x;
             rgba.y = rgba.y + rgba.w * d_scene.bgcolor.y;
             rgba.z = rgba.z + rgba.w * d_scene.bgcolor.z;
-            rgba.w = 1.0; // opacity
+            rgba.w = 1.0f; // opacity
             d_image[idx] = rgba;
         }
     }
@@ -611,7 +611,7 @@ __device__ inline vec2i gsplatTileLocalPixIdxToGlobalPixIdx(SplatTileInfo d_tile
 
 __device__ inline vec2f gsplatTileLocalPixelToScreenCoords(SplatTileInfo d_tileinfo, vec2i tileIdx, vec2i pixIdx) {
     vec2i gidx = gsplatTileLocalPixIdxToGlobalPixIdx(d_tileinfo, tileIdx, pixIdx);
-    return vec2f(gidx.x + 0.5, gidx.y + 0.5);
+    return vec2f(gidx.x + 0.5f, gidx.y + 0.5f);
 }
 
 __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU d_splats2d, SplatTileInfo d_tileinfo,
@@ -635,15 +635,15 @@ __global__ void gsplatTileAlphaCacheKernel(SplatSceneGPU d_scene, SplatData2DGPU
             vec2f dist = p - mu;
             float weight = compute_weight(dist, cov2d);
             c = d_splats2d.color[spid];
-            if (weight >= 0.001) {
+            if (weight >= 0.001f) {
                 c.w *= weight;
             } else {
                 c.w = 0.0f;
             }
         } else {
-            c = vec4f(0.0, 0.0, 0.0, 0.0);
+            c = vec4f(0.0f, 0.0f, 0.0f, 0.0f);
         }
-        d_cacheTrans[cacheIdx] = 1.0 - c.w;
+        d_cacheTrans[cacheIdx] = 1.0f - c.w;
     }
 }
 
@@ -696,7 +696,7 @@ __global__ void gsplatTilePixelSplatColorKernel(SplatTileInfo d_tileinfo, vec2i 
         color.x = color.x * alpha * trans;
         color.y = color.y * alpha * trans;
         color.z = color.z * alpha * trans;
-        color.w = trans * (1.0 - alpha);
+        color.w = trans * (1.0f - alpha);
         d_cacheColor[cacheIdx] = color;
     }
 }
@@ -710,7 +710,7 @@ cudaError_t gsplatTilePixelFinalColor(SplatTileInfo d_tileinfo, vec2i tileIdx, i
 
     ColorSumOp sumop;
     std::int64_t nsegs = d_tileinfo.size.x * d_tileinfo.size.y; // num of pixels of tile
-    vec4f initColor{0.0, 0.0, 0.0, 0.0};
+    vec4f initColor{0.0f, 0.0f, 0.0f, 0.0f};
     cudaError_t err = cub::DeviceSegmentedReduce::Reduce(d_cacheColor, d_tilecolor, nsegs, tmns, sumop, initColor);
     return err;
 }
