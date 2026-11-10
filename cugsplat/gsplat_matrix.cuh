@@ -6,8 +6,8 @@
 namespace gsplat {
 
 struct alignas(8) vec2i {
-    int x = 0, y = 0;
-    __host__ __device__ vec2i() {};
+    int x, y;
+    vec2i() = default;
     __host__ __device__ vec2i(int x, int y) : x(x), y(y) {};
     __host__ __device__ vec2i(const int *data) {
         x = data[0];
@@ -18,8 +18,8 @@ struct alignas(8) vec2i {
 };
 
 struct alignas(8) vec2f {
-    float x = 0.0f, y = 0.0f;
-    __host__ __device__ vec2f() {};
+    float x, y;
+    vec2f() = default;
     __host__ __device__ vec2f(float x, float y) : x(x), y(y) {};
     __host__ __device__ vec2f(vec2i v) : x((float)v.x), y((float)v.y) {};
     __host__ __device__ vec2f(const float *data) {
@@ -31,8 +31,8 @@ struct alignas(8) vec2f {
 };
 
 struct vec3f {
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-    __host__ __device__ vec3f() {};
+    float x, y, z;
+    vec3f() = default;
     __host__ __device__ vec3f(float x, float y, float z) : x(x), y(y), z(z) {};
     __host__ __device__ vec3f(const float *data) {
         x = data[0];
@@ -46,7 +46,7 @@ struct vec3f {
 
 struct alignas(16) vec4f {
     float x, y, z, w;
-    __host__ __device__ vec4f() {};
+    vec4f() = default;
     __host__ __device__ vec4f(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {};
     __host__ __device__ vec4f(const float *data) {
         x = data[0];
@@ -70,7 +70,7 @@ struct alignas(16) vec4f {
 struct mat2x2f {
     vec2f r0;
     vec2f r1;
-    __host__ __device__ mat2x2f() {};
+    mat2x2f() = default;
     __host__ __device__ mat2x2f(float m00, float m01, float m10, float m11) {
         r0[0] = m00;
         r0[1] = m01;
@@ -92,7 +92,7 @@ struct mat3x2f;
 struct mat2x3f {
     vec3f r0;
     vec3f r1;
-    __host__ __device__ mat2x3f() {};
+    mat2x3f() = default;
     __host__ __device__ mat2x3f(const float *data) {
         r0[0] = data[0];
         r0[1] = data[1];
@@ -118,7 +118,7 @@ struct mat3x2f {
     vec2f r0;
     vec2f r1;
     vec2f r2;
-    __host__ __device__ mat3x2f() {};
+    mat3x2f() = default;
     __host__ __device__ mat3x2f(const float *data) {
         r0[0] = data[0];
         r0[1] = data[1];
@@ -156,7 +156,7 @@ struct mat3x3f {
     vec3f r0;
     vec3f r1;
     vec3f r2;
-    __host__ __device__ mat3x3f() {};
+    mat3x3f() = default;
     __host__ __device__ mat3x3f(vec3f r0, vec3f r1, vec3f r2) : r0(r0), r1(r1), r2(r2) {};
     __host__ __device__ mat3x3f(const float *data) {
         r0[0] = data[0];
@@ -201,7 +201,7 @@ struct mat4x4f {
     vec4f r1;
     vec4f r2;
     vec4f r3;
-    __host__ __device__ mat4x4f() {};
+    mat4x4f() = default;
     __host__ __device__ mat4x4f(const float *data) {
         r0[0] = data[0];
         r0[1] = data[1];

@@ -190,28 +190,45 @@ __global__ void gsplatTileAlphaCacheKernel(SplatScene d_scene, SplatData2D d_spl
                                            vec2i tileIdx, int stride, int tmns, vec4f *d_cacheColor,
                                            float *d_cacheTrans) {
 
-    int pidx = blockDim.x * blockIdx.x + threadIdx.x;    // x of pixel on tile
-    int pidy = blockDim.y * blockIdx.y + threadIdx.y;    // y of pixel on tile
-    int enid = blockDim.z * blockIdx.z + threadIdx.z;    // index entry id on tile (enid-th splat on tile)
+    int enid = blockDim.x * blockIdx.x + threadIdx.x; // index entry id on tile (enid-th splat on tile)
+    int pidx = blockDim.y * blockIdx.y + threadIdx.y; // x of pixel on tile
+    int pidy = blockDim.z * blockIdx.z + threadIdx.z; // y of pixel on tile
+
     int tid = tileIdx.y * d_tileinfo.nums.x + tileIdx.x; // tile 1d idx
     int cacheIdx = (pidy * d_tileinfo.size.x + pidx) * tmns + enid;
 
-    if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y && enid < stride) {
+    __shared__ float s_depth[8]; // TODO not use magic 8
+    __shared__ vec2f s_pos2d[8];
+    __shared__ mat2x2f s_cov2d[8];
+    __shared__ vec4f s_rect[8];
+    __shared__ vec4f s_color[8];
+
+    if (threadIdx.y == 0 && threadIdx.z == 0 && enid < stride) {
+
         int toff = d_tileinfo.index.offset[tid];
+        int spid = d_tileinfo.index.entries[toff + enid];
+        s_depth[threadIdx.x] = d_splats2d.depth[spid];
+        s_pos2d[threadIdx.x] = d_splats2d.pos2d[spid];
+        s_cov2d[threadIdx.x] = d_splats2d.cov2d[spid];
+        s_rect[threadIdx.x] = d_splats2d.rect[spid];
+        s_color[threadIdx.x] = d_splats2d.color[spid];
+    }
+
+    __syncthreads();
+
+    if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y && enid < stride) {
         int tstr = d_tileinfo.index.stride[tid];
         vec2f p = gsplatTileLocalPixelToScreenCoords(d_tileinfo, tileIdx, vec2i(pidx, pidy));
-        vec4f c;
+        vec4f c(0.0f, 0.0f, 0.0f, 0.0f);
         if (enid < tstr) {
-            int spid = d_tileinfo.index.entries[toff + enid]; // splat id in d_splats2d
-            float depth = d_splats2d.depth[spid];
+            float depth = s_depth[threadIdx.x];
             if (depth > 0) { // 提前进行near/far剔除
-                vec2f mu = d_splats2d.pos2d[spid];
-                mat2x2f cov2d = d_splats2d.cov2d[spid];
-                vec4f rect = d_splats2d.rect[spid];
-                vec2f dist = p - mu;
+                vec2f dist = p - s_pos2d[threadIdx.x];
+                vec4f rect = s_rect[threadIdx.x];
+                mat2x2f cov2d = s_cov2d[threadIdx.x];
                 bool inRect = p.x >= rect.x && p.x <= rect.z && p.y >= rect.y && p.y <= rect.w;
                 float weight = inRect ? compute_weight(dist, cov2d) : 0.0f;
-                c = d_splats2d.color[spid];
+                c = s_color[threadIdx.x];
                 if (weight >= 0.001f && c.w > 0) {
                     c.w *= weight;
                 } else {
@@ -296,9 +313,11 @@ cudaError_t gsplatTileTransCumProd(SplatTileInfo d_tileinfo, unsigned int tid, i
 
 __global__ void gsplatTilePixelSplatColorKernel(SplatTileInfo d_tileinfo, vec2i tileIdx, vec4f *d_cacheColor,
                                                 float *d_cacheTrans, int stride, int tmns) {
-    int pidx = blockDim.x * blockIdx.x + threadIdx.x; // x of pixel on tile
-    int pidy = blockDim.y * blockIdx.y + threadIdx.y; // y of pixel on tile
-    int enid = blockDim.z * blockIdx.z + threadIdx.z; // index entry id on tile (enid-th splat on tile)
+
+    int enid = blockDim.x * blockIdx.x + threadIdx.x; // index entry id on tile (enid-th splat on tile)
+    int pidx = blockDim.y * blockIdx.y + threadIdx.y; // x of pixel on tile
+    int pidy = blockDim.z * blockIdx.z + threadIdx.z; // y of pixel on tile
+
     int cacheIdx = (pidy * d_tileinfo.size.x + pidx) * tmns + enid;
     if (pidx < d_tileinfo.size.x && pidy < d_tileinfo.size.y && enid < stride) {
         vec4f color = d_cacheColor[cacheIdx];
@@ -403,7 +422,7 @@ cudaError_t gsplat_image_render_at_device(SplatScene d_scene, SplatData2D d_spla
             vec2i tileIdx(tileX, tileY);
             int tid = tileY * d_tileinfo.nums.x + tileX;
             int stride = h_tileInfo.index.stride[tid];
-            dim3 dimSize(d_tileinfo.size.x, d_tileinfo.size.y, stride);
+            dim3 dimSize(stride, d_tileinfo.size.x, d_tileinfo.size.y);
             dim3 blockDim(8, 8, 8);
             dim3 blockNum = cuda::BLOCKNUM(blockDim, dimSize);
 
